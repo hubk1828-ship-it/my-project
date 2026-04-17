@@ -1,0 +1,36 @@
+# ===========================
+# CryptoAnalyzer Backend
+# ===========================
+
+# Core
+fastapi
+uvicorn[standard]
+python-dotenv
+python-multipart
+
+# Database
+sqlalchemy[asyncio]
+aiosqlite
+
+# Auth & Security
+python-jose[cryptography]
+passlib[bcrypt]
+cryptography
+
+# External APIs
+httpx
+websockets
+
+# Analysis
+pandas
+numpy
+
+# Notifications
+aiosmtplib
+
+# Scheduling
+apscheduler
+
+# Utilities
+pydantic[email]
+pydantic-settings

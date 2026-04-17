@@ -1,0 +1,2002 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryptoAnalyzer — Design Prototype</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #06081a;
+            --bg-secondary: #0d1127;
+            --bg-card: rgba(15, 20, 50, 0.8);
+            --bg-card-hover: rgba(20, 28, 65, 0.9);
+            --border: rgba(99, 130, 255, 0.12);
+            --border-hover: rgba(99, 130, 255, 0.3);
+            --text-primary: #e8ecf4;
+            --text-secondary: #7a85a5;
+            --text-muted: #4a5578;
+            --accent-blue: #3b82f6;
+            --accent-blue-glow: rgba(59, 130, 246, 0.25);
+            --accent-green: #10b981;
+            --accent-green-soft: rgba(16, 185, 129, 0.15);
+            --accent-red: #ef4444;
+            --accent-red-soft: rgba(239, 68, 68, 0.15);
+            --accent-amber: #f59e0b;
+            --accent-amber-soft: rgba(245, 158, 11, 0.12);
+            --accent-purple: #8b5cf6;
+            --sidebar-w: 260px;
+            --topbar-h: 64px;
+            --radius: 12px;
+            --radius-sm: 8px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar {
+            position: fixed;
+            right: 0; top: 0; bottom: 0;
+            width: var(--sidebar-w);
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s;
+        }
+
+        .sidebar-logo {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .sidebar-logo .logo-icon {
+            width: 38px; height: 38px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; font-weight: 800; color: #fff;
+        }
+
+        .sidebar-logo h1 {
+            font-size: 16px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .sidebar-logo span {
+            font-size: 11px;
+            color: var(--text-muted);
+            display: block;
+        }
+
+        .sidebar-section {
+            padding: 16px 16px 8px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            padding: 8px 12px;
+            overflow-y: auto;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 14px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-secondary);
+            font-size: 13.5px;
+            font-weight: 500;
+            margin-bottom: 2px;
+            position: relative;
+        }
+
+        .nav-item:hover {
+            background: rgba(59, 130, 246, 0.08);
+            color: var(--text-primary);
+        }
+
+        .nav-item.active {
+            background: rgba(59, 130, 246, 0.12);
+            color: var(--accent-blue);
+        }
+
+        .nav-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 8px; bottom: 8px;
+            width: 3px;
+            background: var(--accent-blue);
+            border-radius: 0 3px 3px 0;
+        }
+
+        .nav-icon {
+            font-size: 18px;
+            width: 22px;
+            text-align: center;
+        }
+
+        .sidebar-footer {
+            padding: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .user-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            background: rgba(59, 130, 246, 0.06);
+            border-radius: var(--radius-sm);
+        }
+
+        .user-avatar {
+            width: 34px; height: 34px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px; font-weight: 700; color: #fff;
+        }
+
+        .user-info { font-size: 12.5px; font-weight: 600; }
+        .user-role { font-size: 10.5px; color: var(--text-muted); font-weight: 400; }
+
+        /* ===== TOPBAR ===== */
+        .topbar {
+            position: fixed;
+            top: 0; left: 0;
+            right: var(--sidebar-w);
+            height: var(--topbar-h);
+            background: rgba(6, 8, 26, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            z-index: 90;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 28px;
+        }
+
+        .topbar-title {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .topbar-title span {
+            color: var(--text-muted);
+            font-weight: 400;
+            font-size: 13px;
+            margin-right: 12px;
+        }
+
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .search-box {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 8px 14px;
+            min-width: 240px;
+        }
+
+        .search-box input {
+            background: none;
+            border: none;
+            outline: none;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13px;
+            width: 100%;
+        }
+
+        .search-box input::placeholder { color: var(--text-muted); }
+
+        .icon-btn {
+            width: 38px; height: 38px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .icon-btn:hover {
+            background: rgba(59, 130, 246, 0.08);
+            border-color: var(--border-hover);
+            color: var(--text-primary);
+        }
+
+        .icon-btn .badge {
+            position: absolute;
+            top: -3px; left: -3px;
+            width: 16px; height: 16px;
+            background: var(--accent-red);
+            border-radius: 50%;
+            font-size: 9px;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-weight: 700;
+        }
+
+        /* ===== MAIN CONTENT ===== */
+        .main {
+            margin-right: var(--sidebar-w);
+            margin-top: var(--topbar-h);
+            padding: 28px;
+            min-height: calc(100vh - var(--topbar-h));
+        }
+
+        /* ===== PAGES - Toggle ===== */
+        .page { display: none; }
+        .page.active { display: block; animation: fadeIn 0.3s ease; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ===== STAT CARDS ===== */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .stat-card:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+
+        .stat-card .label {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 500;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stat-card .value {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+
+        .stat-card .change {
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 6px;
+        }
+
+        .stat-card .change.up { color: var(--accent-green); }
+        .stat-card .change.down { color: var(--accent-red); }
+
+        /* ===== TABLE ===== */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 18px 22px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .card-header h3 {
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead th {
+            padding: 12px 18px;
+            text-align: right;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        tbody td {
+            padding: 14px 18px;
+            font-size: 13.5px;
+            border-bottom: 1px solid rgba(99, 130, 255, 0.06);
+            vertical-align: middle;
+        }
+
+        tbody tr:hover { background: rgba(59, 130, 246, 0.04); }
+        tbody tr:last-child td { border-bottom: none; }
+
+        /* ===== BADGES ===== */
+        .badge-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11.5px;
+            font-weight: 600;
+        }
+
+        .badge-active {
+            background: var(--accent-green-soft);
+            color: var(--accent-green);
+        }
+
+        .badge-inactive {
+            background: var(--accent-red-soft);
+            color: var(--accent-red);
+        }
+
+        .badge-buy {
+            background: var(--accent-green-soft);
+            color: var(--accent-green);
+        }
+
+        .badge-sell {
+            background: var(--accent-red-soft);
+            color: var(--accent-red);
+        }
+
+        .badge-no-opp {
+            background: var(--accent-amber-soft);
+            color: var(--accent-amber);
+        }
+
+        .badge-admin {
+            background: rgba(139, 92, 246, 0.15);
+            color: var(--accent-purple);
+        }
+
+        .badge-user {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--accent-blue);
+        }
+
+        .badge-filled {
+            background: var(--accent-green-soft);
+            color: var(--accent-green);
+        }
+
+        .badge-pending {
+            background: var(--accent-amber-soft);
+            color: var(--accent-amber);
+        }
+
+        /* ===== BUTTONS ===== */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 18px;
+            border-radius: var(--radius-sm);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--accent-blue);
+            color: #fff;
+            box-shadow: 0 2px 12px var(--accent-blue-glow);
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px var(--accent-blue-glow);
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-ghost:hover {
+            background: rgba(59, 130, 246, 0.08);
+            color: var(--text-primary);
+        }
+
+        .btn-danger {
+            background: var(--accent-red-soft);
+            color: var(--accent-red);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+        /* ===== TOGGLE SWITCH ===== */
+        .toggle {
+            position: relative;
+            width: 42px;
+            height: 24px;
+            display: inline-block;
+        }
+
+        .toggle input { display: none; }
+
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            background: var(--text-muted);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .toggle-slider::after {
+            content: '';
+            position: absolute;
+            width: 18px; height: 18px;
+            border-radius: 50%;
+            background: #fff;
+            top: 3px; right: 3px;
+            transition: 0.3s;
+        }
+
+        .toggle input:checked + .toggle-slider {
+            background: var(--accent-green);
+        }
+
+        .toggle input:checked + .toggle-slider::after {
+            right: 21px;
+        }
+
+        /* ===== ANALYSIS CARDS ===== */
+        .analysis-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .analysis-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 22px;
+            transition: all 0.3s;
+        }
+
+        .analysis-card:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+        }
+
+        .analysis-card.decision-buy { border-top: 3px solid var(--accent-green); }
+        .analysis-card.decision-sell { border-top: 3px solid var(--accent-red); }
+        .analysis-card.decision-none { border-top: 3px solid var(--accent-amber); }
+
+        .analysis-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+        }
+
+        .coin-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .coin-icon {
+            width: 42px; height: 42px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; font-weight: 800;
+        }
+
+        .coin-btc { background: linear-gradient(135deg, #f7931a33, #f7931a11); color: #f7931a; }
+        .coin-eth { background: linear-gradient(135deg, #627eea33, #627eea11); color: #627eea; }
+        .coin-sol { background: linear-gradient(135deg, #9945ff33, #9945ff11); color: #9945ff; }
+        .coin-bnb { background: linear-gradient(135deg, #f3ba2f33, #f3ba2f11); color: #f3ba2f; }
+        .coin-xrp { background: linear-gradient(135deg, #23292f33, #fff1); color: #fff; }
+        .coin-ada { background: linear-gradient(135deg, #0033ad33, #0033ad11); color: #3468d1; }
+
+        .coin-name { font-weight: 700; font-size: 16px; }
+        .coin-pair { font-size: 12px; color: var(--text-muted); }
+
+        .analysis-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(99, 130, 255, 0.06);
+        }
+
+        .analysis-row:last-child { border-bottom: none; }
+
+        .analysis-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .analysis-value {
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .analysis-value.yes { color: var(--accent-green); }
+        .analysis-value.no { color: var(--accent-red); }
+        .analysis-value.unclear { color: var(--accent-amber); }
+
+        .decision-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 10px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 700;
+            margin-top: 14px;
+            letter-spacing: 0.5px;
+        }
+
+        .decision-buy-bg {
+            background: var(--accent-green-soft);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .decision-sell-bg {
+            background: var(--accent-red-soft);
+            color: var(--accent-red);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .decision-none-bg {
+            background: var(--accent-amber-soft);
+            color: var(--accent-amber);
+            border: 1px solid rgba(245, 158, 11, 0.15);
+        }
+
+        .confidence-bar {
+            margin-top: 12px;
+        }
+
+        .confidence-bar .bar-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .confidence-bar .bar-track {
+            height: 4px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .confidence-bar .bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.6s ease;
+        }
+
+        .bar-fill.high { background: var(--accent-green); }
+        .bar-fill.medium { background: var(--accent-amber); }
+        .bar-fill.low { background: var(--accent-red); }
+
+        /* ===== NO OPPORTUNITY BANNER ===== */
+        .no-opp-banner {
+            background: var(--accent-amber-soft);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            border-radius: var(--radius);
+            padding: 16px 22px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            color: var(--accent-amber);
+            font-weight: 500;
+        }
+
+        .no-opp-banner .icon { font-size: 22px; }
+
+        /* ===== PORTFOLIO HEADER ===== */
+        .portfolio-hero {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(139, 92, 246, 0.06));
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 32px;
+            margin-bottom: 24px;
+        }
+
+        .portfolio-hero .total-label {
+            font-size: 13px;
+            color: var(--text-muted);
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .portfolio-hero .total-value {
+            font-size: 40px;
+            font-weight: 800;
+            letter-spacing: -1px;
+        }
+
+        .portfolio-hero .total-change {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .portfolio-hero .total-change.up {
+            background: var(--accent-green-soft);
+            color: var(--accent-green);
+        }
+
+        .mini-assets {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .mini-asset-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .mini-asset-card:hover {
+            border-color: var(--border-hover);
+        }
+
+        .mini-asset-card .coin-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .mini-asset-card .mini-icon {
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: 800;
+        }
+
+        .mini-asset-card .asset-value {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .mini-asset-card .asset-change {
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        /* ===== SETTINGS FORM ===== */
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+            gap: 20px;
+        }
+
+        .settings-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+        }
+
+        .settings-section h4 {
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px 14px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13.5px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .form-input:focus {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px var(--accent-blue-glow);
+        }
+
+        .form-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(99, 130, 255, 0.06);
+        }
+
+        .form-row:last-child { border-bottom: none; }
+
+        .form-row-label {
+            font-size: 13.5px;
+            font-weight: 500;
+        }
+
+        .form-row-desc {
+            font-size: 11.5px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* ===== REPORT CARD ===== */
+        .report-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .report-header {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.06));
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .report-header h3 { font-size: 16px; font-weight: 700; }
+        .report-header .date { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+        .report-body {
+            padding: 20px 24px;
+        }
+
+        .report-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .report-stat {
+            padding: 14px;
+            background: rgba(255,255,255,0.02);
+            border-radius: var(--radius-sm);
+            border: 1px solid rgba(99, 130, 255, 0.06);
+        }
+
+        .report-stat .stat-icon { font-size: 20px; margin-bottom: 6px; }
+        .report-stat .stat-label { font-size: 11.5px; color: var(--text-muted); margin-bottom: 4px; }
+        .report-stat .stat-value { font-size: 20px; font-weight: 700; }
+
+        .telegram-preview {
+            background: #1a2236;
+            border-radius: var(--radius);
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 13.5px;
+            line-height: 1.9;
+            border: 1px solid var(--border);
+            white-space: pre-line;
+            direction: ltr;
+            text-align: left;
+        }
+
+        /* ===== ADMIN WALLETS ===== */
+        .wallets-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .wallet-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+        }
+
+        .wallet-card .wallet-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .wallet-card .wallet-balance {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .wallet-card .wallet-exchange {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .wallet-card .wallet-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid var(--border);
+        }
+
+        /* ===== SCREEN LABEL (Top of pages) ===== */
+        .page-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            background: rgba(59, 130, 246, 0.08);
+            border: 1px solid rgba(59, 130, 246, 0.15);
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--accent-blue);
+            margin-bottom: 16px;
+        }
+
+        /* ===== ROLE SWITCHER ===== */
+        .role-switcher {
+            position: fixed;
+            bottom: 24px;
+            left: 24px;
+            z-index: 200;
+            display: flex;
+            gap: 8px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+
+        .role-btn {
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            border: none;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: transparent;
+            color: var(--text-secondary);
+        }
+
+        .role-btn.active {
+            background: var(--accent-blue);
+            color: #fff;
+        }
+
+        /* ===== CHIP TAGS ===== */
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 5px 12px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .chip.active-chip {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 900px) {
+            .sidebar { transform: translateX(100%); }
+            .main { margin-right: 0; }
+            .topbar { right: 0; }
+            .analysis-grid { grid-template-columns: 1fr; }
+            .settings-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ===== SIDEBAR ===== -->
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+        <div class="logo-icon">CA</div>
+        <div>
+            <h1>CryptoAnalyzer</h1>
+            <span>منصة تحليل داخلية</span>
+        </div>
+    </div>
+
+    <!-- Admin Nav -->
+    <nav class="sidebar-nav" id="admin-nav">
+        <div class="sidebar-section">لوحة الأدمن</div>
+        <div class="nav-item active" onclick="showPage('admin-users', this)">
+            <span class="nav-icon">👥</span> إدارة المستخدمين
+        </div>
+        <div class="nav-item" onclick="showPage('admin-wallets', this)">
+            <span class="nav-icon">💼</span> مراقبة المحافظ
+        </div>
+        <div class="nav-item" onclick="showPage('admin-bot', this)">
+            <span class="nav-icon">⚙️</span> إعدادات البوت
+        </div>
+        <div class="nav-item" onclick="showPage('admin-reports', this)">
+            <span class="nav-icon">📊</span> التقارير
+        </div>
+    </nav>
+
+    <!-- User Nav -->
+    <nav class="sidebar-nav" id="user-nav" style="display:none;">
+        <div class="sidebar-section">لوحة المستخدم</div>
+        <div class="nav-item active" onclick="showPage('user-analysis', this)">
+            <span class="nav-icon">📊</span> تحليل اليوم
+        </div>
+        <div class="nav-item" onclick="showPage('user-portfolio', this)">
+            <span class="nav-icon">💰</span> محفظتي
+        </div>
+        <div class="nav-item" onclick="showPage('user-settings', this)">
+            <span class="nav-icon">⚙️</span> الإعدادات
+        </div>
+        <div class="nav-item" onclick="showPage('user-reports', this)">
+            <span class="nav-icon">📋</span> التقارير
+        </div>
+    </nav>
+
+    <div class="sidebar-footer">
+        <div class="user-card">
+            <div class="user-avatar" id="sidebar-avatar">م</div>
+            <div>
+                <div class="user-info" id="sidebar-name">محمد أحمد</div>
+                <div class="user-role" id="sidebar-role">أدمن</div>
+            </div>
+        </div>
+    </div>
+</aside>
+
+<!-- ===== TOPBAR ===== -->
+<header class="topbar">
+    <div class="topbar-title" id="topbar-title">
+        إدارة المستخدمين
+        <span>آخر تحديث: منذ 3 دقائق</span>
+    </div>
+    <div class="topbar-actions">
+        <div class="search-box">
+            <span>🔍</span>
+            <input type="text" placeholder="بحث...">
+        </div>
+        <button class="icon-btn">
+            🔔
+            <span class="badge">3</span>
+        </button>
+    </div>
+</header>
+
+<!-- ===== MAIN CONTENT ===== -->
+<main class="main">
+
+    <!-- ============================== -->
+    <!-- ADMIN: Users Management        -->
+    <!-- ============================== -->
+    <div class="page active" id="page-admin-users">
+        <div class="page-label">🔒 لوحة الأدمن</div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">👥 إجمالي المستخدمين</div>
+                <div class="value">8</div>
+                <div class="change up">+2 هذا الشهر</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">✅ نشط الآن</div>
+                <div class="value">6</div>
+                <div class="change up">75%</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">🤖 تداول آلي مفعّل</div>
+                <div class="value">3</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">💼 محافظ مربوطة</div>
+                <div class="value">5</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h3>المستخدمون</h3>
+                <button class="btn btn-primary" onclick="alert('نموذج إضافة مستخدم جديد')">+ إضافة مستخدم</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>المستخدم</th>
+                        <th>البريد الإلكتروني</th>
+                        <th>الدور</th>
+                        <th>الحالة</th>
+                        <th>التداول الآلي</th>
+                        <th>تاريخ الإضافة</th>
+                        <th>إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>محمد أحمد</strong></td>
+                        <td style="color:var(--text-secondary)">mohammed@team.com</td>
+                        <td><span class="badge-status badge-admin">أدمن</span></td>
+                        <td><span class="badge-status badge-active">● نشط</span></td>
+                        <td><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></td>
+                        <td style="color:var(--text-secondary)">2025-01-15</td>
+                        <td><button class="btn btn-ghost btn-sm">تعديل</button></td>
+                    </tr>
+                    <tr>
+                        <td><strong>سارة خالد</strong></td>
+                        <td style="color:var(--text-secondary)">sara@team.com</td>
+                        <td><span class="badge-status badge-user">مستخدم</span></td>
+                        <td><span class="badge-status badge-active">● نشط</span></td>
+                        <td><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></td>
+                        <td style="color:var(--text-secondary)">2025-02-20</td>
+                        <td>
+                            <button class="btn btn-ghost btn-sm">تعديل</button>
+                            <button class="btn btn-danger btn-sm">تعطيل</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>أحمد يوسف</strong></td>
+                        <td style="color:var(--text-secondary)">ahmed@team.com</td>
+                        <td><span class="badge-status badge-user">مستخدم</span></td>
+                        <td><span class="badge-status badge-active">● نشط</span></td>
+                        <td><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></td>
+                        <td style="color:var(--text-secondary)">2025-03-10</td>
+                        <td>
+                            <button class="btn btn-ghost btn-sm">تعديل</button>
+                            <button class="btn btn-danger btn-sm">تعطيل</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>فاطمة علي</strong></td>
+                        <td style="color:var(--text-secondary)">fatima@team.com</td>
+                        <td><span class="badge-status badge-user">مستخدم</span></td>
+                        <td><span class="badge-status badge-inactive">● معطّل</span></td>
+                        <td><label class="toggle"><input type="checkbox" disabled><span class="toggle-slider"></span></label></td>
+                        <td style="color:var(--text-secondary)">2025-04-01</td>
+                        <td>
+                            <button class="btn btn-ghost btn-sm">تعديل</button>
+                            <button class="btn btn-primary btn-sm">تفعيل</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>عمر حسن</strong></td>
+                        <td style="color:var(--text-secondary)">omar@team.com</td>
+                        <td><span class="badge-status badge-user">مستخدم</span></td>
+                        <td><span class="badge-status badge-active">● نشط</span></td>
+                        <td><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></td>
+                        <td style="color:var(--text-secondary)">2025-03-25</td>
+                        <td>
+                            <button class="btn btn-ghost btn-sm">تعديل</button>
+                            <button class="btn btn-danger btn-sm">تعطيل</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ============================== -->
+    <!-- ADMIN: Wallets Monitoring      -->
+    <!-- ============================== -->
+    <div class="page" id="page-admin-wallets">
+        <div class="page-label">🔒 لوحة الأدمن</div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">💰 إجمالي أرصدة الفريق</div>
+                <div class="value" style="color: var(--accent-green);">$48,293</div>
+                <div class="change up">↑ +$1,240 اليوم</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">📈 إجمالي الربح</div>
+                <div class="value" style="color: var(--accent-green);">$3,847</div>
+                <div class="change up">+8.65%</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">🔄 صفقات اليوم</div>
+                <div class="value">12</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">🤖 صفقات آلية اليوم</div>
+                <div class="value">7</div>
+            </div>
+        </div>
+
+        <div class="wallets-overview">
+            <div class="wallet-card">
+                <div class="wallet-user">
+                    <div class="user-avatar">م</div>
+                    <div>
+                        <div style="font-weight:600;">محمد أحمد</div>
+                        <div style="font-size:12px; color:var(--text-muted);">أدمن</div>
+                    </div>
+                </div>
+                <div class="wallet-balance">$15,432.87</div>
+                <div class="wallet-exchange">Binance · آخر تحديث: منذ 2 دقيقة</div>
+                <div class="wallet-footer">
+                    <span class="badge-status badge-active">● تداول آلي مفعّل</span>
+                    <span style="color:var(--accent-green); font-weight:600; font-size:13px;">+$320 اليوم</span>
+                </div>
+            </div>
+            <div class="wallet-card">
+                <div class="wallet-user">
+                    <div class="user-avatar" style="background:linear-gradient(135deg,#10b981,#059669);">س</div>
+                    <div>
+                        <div style="font-weight:600;">سارة خالد</div>
+                        <div style="font-size:12px; color:var(--text-muted);">مستخدم</div>
+                    </div>
+                </div>
+                <div class="wallet-balance">$12,458.32</div>
+                <div class="wallet-exchange">Binance · آخر تحديث: منذ 5 دقائق</div>
+                <div class="wallet-footer">
+                    <span class="badge-status badge-active">● تداول آلي مفعّل</span>
+                    <span style="color:var(--accent-green); font-weight:600; font-size:13px;">+$180 اليوم</span>
+                </div>
+            </div>
+            <div class="wallet-card">
+                <div class="wallet-user">
+                    <div class="user-avatar" style="background:linear-gradient(135deg,#f59e0b,#d97706);">أ</div>
+                    <div>
+                        <div style="font-weight:600;">أحمد يوسف</div>
+                        <div style="font-size:12px; color:var(--text-muted);">مستخدم</div>
+                    </div>
+                </div>
+                <div class="wallet-balance">$8,920.44</div>
+                <div class="wallet-exchange">Bybit · آخر تحديث: منذ 1 دقيقة</div>
+                <div class="wallet-footer">
+                    <span class="badge-status badge-inactive">● تداول آلي معطّل</span>
+                    <span style="color:var(--accent-red); font-weight:600; font-size:13px;">-$45 اليوم</span>
+                </div>
+            </div>
+            <div class="wallet-card">
+                <div class="wallet-user">
+                    <div class="user-avatar" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed);">ع</div>
+                    <div>
+                        <div style="font-weight:600;">عمر حسن</div>
+                        <div style="font-size:12px; color:var(--text-muted);">مستخدم</div>
+                    </div>
+                </div>
+                <div class="wallet-balance">$11,481.55</div>
+                <div class="wallet-exchange">Binance · آخر تحديث: منذ 3 دقائق</div>
+                <div class="wallet-footer">
+                    <span class="badge-status badge-active">● تداول آلي مفعّل</span>
+                    <span style="color:var(--accent-green); font-weight:600; font-size:13px;">+$785 اليوم</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================== -->
+    <!-- ADMIN: Bot Settings            -->
+    <!-- ============================== -->
+    <div class="page" id="page-admin-bot">
+        <div class="page-label">🔒 لوحة الأدمن</div>
+
+        <div class="settings-grid">
+            <div class="settings-section">
+                <h4>🪙 العملات الافتراضية المفعّلة</h4>
+                <div class="chips" style="margin-bottom: 20px;">
+                    <span class="chip active-chip">✓ BTCUSDT</span>
+                    <span class="chip active-chip">✓ ETHUSDT</span>
+                    <span class="chip active-chip">✓ SOLUSDT</span>
+                    <span class="chip">BNBUSDT</span>
+                    <span class="chip">XRPUSDT</span>
+                    <span class="chip">ADAUSDT</span>
+                    <span class="chip">DOGEUSDT</span>
+                    <span class="chip">AVAXUSDT</span>
+                </div>
+                <button class="btn btn-ghost btn-sm">+ إضافة عملة</button>
+            </div>
+            <div class="settings-section">
+                <h4>📰 مصادر الأخبار الموثوقة</h4>
+                <div class="chips" style="margin-bottom: 20px;">
+                    <span class="chip active-chip">✓ CoinDesk</span>
+                    <span class="chip active-chip">✓ Reuters</span>
+                    <span class="chip active-chip">✓ Bloomberg Crypto</span>
+                    <span class="chip active-chip">✓ The Block</span>
+                    <span class="chip active-chip">✓ Decrypt</span>
+                    <span class="chip">CoinTelegraph</span>
+                </div>
+                <button class="btn btn-ghost btn-sm">+ إضافة مصدر</button>
+            </div>
+            <div class="settings-section">
+                <h4>🤖 حدود التداول الآلي العامة</h4>
+                <div class="form-group">
+                    <label>الحد الأقصى للصفقة الواحدة (USDT)</label>
+                    <input class="form-input" type="number" value="500" />
+                </div>
+                <div class="form-group">
+                    <label>الحد الأقصى للصفقات اليومية لكل مستخدم</label>
+                    <input class="form-input" type="number" value="10" />
+                </div>
+                <div class="form-group">
+                    <label>حد الخسارة اليومي لكل مستخدم (USDT)</label>
+                    <input class="form-input" type="number" value="100" />
+                </div>
+                <div class="form-group">
+                    <label>أقصى نسبة من المحفظة في صفقة واحدة (%)</label>
+                    <input class="form-input" type="number" value="15" />
+                </div>
+                <button class="btn btn-primary" style="margin-top:8px;">حفظ الإعدادات</button>
+            </div>
+            <div class="settings-section">
+                <h4>⏰ جدولة التحليل</h4>
+                <div class="form-row">
+                    <div>
+                        <div class="form-row-label">تشغيل التحليل التلقائي</div>
+                        <div class="form-row-desc">يعمل كل ساعة خلال ساعات التداول</div>
+                    </div>
+                    <label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <div class="form-row-label">إرسال تقارير يومية</div>
+                        <div class="form-row-desc">Telegram + Email الساعة 11 مساءً</div>
+                    </div>
+                    <label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <div class="form-row-label">تنبيهات فورية عند الفرص</div>
+                        <div class="form-row-desc">إشعار فوري عند رصد فرصة شراء/بيع</div>
+                    </div>
+                    <label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================== -->
+    <!-- USER: Today's Analysis         -->
+    <!-- ============================== -->
+    <div class="page" id="page-user-analysis">
+        <div class="page-label">📊 تحليل اليوم</div>
+
+        <div class="stats-grid">
+            <div class="stat-card" style="border-right: 3px solid var(--accent-green);">
+                <div class="label">✅ فرص مرصودة اليوم</div>
+                <div class="value" style="color:var(--accent-green);">2</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">🔍 عملات تم تحليلها</div>
+                <div class="value">8</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">⚠️ لا فرصة واضحة</div>
+                <div class="value" style="color:var(--accent-amber);">5</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">🕐 آخر تحليل</div>
+                <div class="value" style="font-size:18px;">منذ 15 دقيقة</div>
+            </div>
+        </div>
+
+        <div class="analysis-grid">
+            <!-- BTC - BUY -->
+            <div class="analysis-card decision-buy">
+                <div class="analysis-header">
+                    <div class="coin-info">
+                        <div class="coin-icon coin-btc">₿</div>
+                        <div>
+                            <div class="coin-name">Bitcoin</div>
+                            <div class="coin-pair">BTCUSDT · $67,432.50</div>
+                        </div>
+                    </div>
+                    <span style="font-size:12px; color:var(--text-muted);">منذ 15 دقيقة</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">هل الزخم حقيقي؟</span>
+                    <span class="analysis-value yes">✓ نعم</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">هل السعر أكّد الخبر؟</span>
+                    <span class="analysis-value yes">✓ نعم</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">مصدر الخبر</span>
+                    <span class="analysis-value" style="color:var(--text-primary);">Reuters</span>
+                </div>
+                <div class="decision-badge decision-buy-bg">📈 شراء — فرصة حقيقية</div>
+                <div class="confidence-bar">
+                    <div class="bar-label"><span>مستوى الثقة</span><span>85%</span></div>
+                    <div class="bar-track"><div class="bar-fill high" style="width:85%"></div></div>
+                </div>
+            </div>
+
+            <!-- ETH - SELL -->
+            <div class="analysis-card decision-sell">
+                <div class="analysis-header">
+                    <div class="coin-info">
+                        <div class="coin-icon coin-eth">Ξ</div>
+                        <div>
+                            <div class="coin-name">Ethereum</div>
+                            <div class="coin-pair">ETHUSDT · $3,421.80</div>
+                        </div>
+                    </div>
+                    <span style="font-size:12px; color:var(--text-muted);">منذ 20 دقيقة</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">هل الزخم حقيقي؟</span>
+                    <span class="analysis-value yes">✓ نعم</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">هل السعر أكّد الخبر؟</span>
+                    <span class="analysis-value yes">✓ نعم</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">مصدر الخبر</span>
+                    <span class="analysis-value" style="color:var(--text-primary);">CoinDesk</span>
+                </div>
+                <div class="decision-badge decision-sell-bg">📉 بيع — مؤشرات هبوط</div>
+                <div class="confidence-bar">
+                    <div class="bar-label"><span>مستوى الثقة</span><span>72%</span></div>
+                    <div class="bar-track"><div class="bar-fill medium" style="width:72%"></div></div>
+                </div>
+            </div>
+
+            <!-- SOL - NO OPP -->
+            <div class="analysis-card decision-none">
+                <div class="analysis-header">
+                    <div class="coin-info">
+                        <div class="coin-icon coin-sol">◎</div>
+                        <div>
+                            <div class="coin-name">Solana</div>
+                            <div class="coin-pair">SOLUSDT · $142.65</div>
+                        </div>
+                    </div>
+                    <span style="font-size:12px; color:var(--text-muted);">منذ 25 دقيقة</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">هل الزخم حقيقي؟</span>
+                    <span class="analysis-value no">✗ لا</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">هل السعر أكّد الخبر؟</span>
+                    <span class="analysis-value unclear">— غير واضح</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">مصدر الخبر</span>
+                    <span class="analysis-value" style="color:var(--text-muted);">لا يوجد خبر مؤثر</span>
+                </div>
+                <div class="decision-badge decision-none-bg">⚠️ لا توجد فرصة واضحة</div>
+                <div class="confidence-bar">
+                    <div class="bar-label"><span>مستوى الثقة</span><span>40%</span></div>
+                    <div class="bar-track"><div class="bar-fill low" style="width:40%"></div></div>
+                </div>
+            </div>
+
+            <!-- BNB - NO OPP -->
+            <div class="analysis-card decision-none">
+                <div class="analysis-header">
+                    <div class="coin-info">
+                        <div class="coin-icon coin-bnb">B</div>
+                        <div>
+                            <div class="coin-name">BNB</div>
+                            <div class="coin-pair">BNBUSDT · $583.20</div>
+                        </div>
+                    </div>
+                    <span style="font-size:12px; color:var(--text-muted);">منذ 30 دقيقة</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">هل الزخم حقيقي؟</span>
+                    <span class="analysis-value no">✗ لا</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">هل السعر أكّد الخبر؟</span>
+                    <span class="analysis-value no">✗ لا</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">مصدر الخبر</span>
+                    <span class="analysis-value" style="color:var(--text-muted);">لا يوجد</span>
+                </div>
+                <div class="decision-badge decision-none-bg">⚠️ لا توجد فرصة واضحة</div>
+                <div class="confidence-bar">
+                    <div class="bar-label"><span>مستوى الثقة</span><span>25%</span></div>
+                    <div class="bar-track"><div class="bar-fill low" style="width:25%"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="no-opp-banner">
+            <span class="icon">⚠️</span>
+            <div>
+                <strong>5 عملات بدون فرصة واضحة اليوم</strong> — SOL, BNB, XRP, ADA, DOGE لا تُظهر إشارات واضحة. الانتظار أفضل من المخاطرة.
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================== -->
+    <!-- USER: Portfolio                -->
+    <!-- ============================== -->
+    <div class="page" id="page-user-portfolio">
+        <div class="page-label">💰 محفظتي</div>
+
+        <div class="portfolio-hero">
+            <div class="total-label">الرصيد الكلي</div>
+            <div class="total-value">$12,458.<span style="font-size:24px; color:var(--text-secondary);">32</span></div>
+            <div class="total-change up">↑ +$632.50 (+5.2%) اليوم</div>
+        </div>
+
+        <div class="mini-assets">
+            <div class="mini-asset-card">
+                <div class="coin-row">
+                    <div class="mini-icon coin-btc">₿</div>
+                    <div>
+                        <span style="font-weight:600;">Bitcoin</span>
+                        <span style="font-size:11px; color:var(--text-muted); margin-right:6px;">0.085 BTC</span>
+                    </div>
+                </div>
+                <div class="asset-value">$5,731.76</div>
+                <div class="asset-change" style="color:var(--accent-green);">+3.4%</div>
+            </div>
+            <div class="mini-asset-card">
+                <div class="coin-row">
+                    <div class="mini-icon coin-eth">Ξ</div>
+                    <div>
+                        <span style="font-weight:600;">Ethereum</span>
+                        <span style="font-size:11px; color:var(--text-muted); margin-right:6px;">1.2 ETH</span>
+                    </div>
+                </div>
+                <div class="asset-value">$4,106.16</div>
+                <div class="asset-change" style="color:var(--accent-red);">-1.2%</div>
+            </div>
+            <div class="mini-asset-card">
+                <div class="coin-row">
+                    <div class="mini-icon coin-sol">◎</div>
+                    <div>
+                        <span style="font-weight:600;">Solana</span>
+                        <span style="font-size:11px; color:var(--text-muted); margin-right:6px;">8.5 SOL</span>
+                    </div>
+                </div>
+                <div class="asset-value">$1,212.53</div>
+                <div class="asset-change" style="color:var(--accent-green);">+7.1%</div>
+            </div>
+            <div class="mini-asset-card">
+                <div class="coin-row">
+                    <div class="mini-icon" style="background:rgba(38,161,123,0.15);color:#26a17b;">₮</div>
+                    <div>
+                        <span style="font-weight:600;">USDT</span>
+                        <span style="font-size:11px; color:var(--text-muted); margin-right:6px;">متاح</span>
+                    </div>
+                </div>
+                <div class="asset-value">$1,407.87</div>
+                <div class="asset-change" style="color:var(--text-muted);">مستقر</div>
+            </div>
+        </div>
+
+        <!-- Assets Table -->
+        <div class="card" style="margin-bottom:24px;">
+            <div class="card-header">
+                <h3>الأصول</h3>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>الأصل</th>
+                        <th>الكمية</th>
+                        <th>القيمة الحالية</th>
+                        <th>متوسط الشراء</th>
+                        <th>الربح/الخسارة</th>
+                        <th>تغيير 24h</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>BTC</strong> <span style="color:var(--text-muted)">Bitcoin</span></td>
+                        <td>0.085</td>
+                        <td>$5,731.76</td>
+                        <td>$5,200.00</td>
+                        <td style="color:var(--accent-green); font-weight:600;">+$531.76 (+10.2%)</td>
+                        <td><span class="badge-status badge-buy">↑ +3.4%</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>ETH</strong> <span style="color:var(--text-muted)">Ethereum</span></td>
+                        <td>1.200</td>
+                        <td>$4,106.16</td>
+                        <td>$3,850.00</td>
+                        <td style="color:var(--accent-green); font-weight:600;">+$256.16 (+6.7%)</td>
+                        <td><span class="badge-status badge-sell">↓ -1.2%</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>SOL</strong> <span style="color:var(--text-muted)">Solana</span></td>
+                        <td>8.500</td>
+                        <td>$1,212.53</td>
+                        <td>$1,350.00</td>
+                        <td style="color:var(--accent-red); font-weight:600;">-$137.47 (-10.2%)</td>
+                        <td><span class="badge-status badge-buy">↑ +7.1%</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Trade History -->
+        <div class="card">
+            <div class="card-header">
+                <h3>سجل الصفقات</h3>
+                <button class="btn btn-ghost btn-sm">عرض الكل</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>التاريخ</th>
+                        <th>الزوج</th>
+                        <th>النوع</th>
+                        <th>الكمية</th>
+                        <th>السعر</th>
+                        <th>القيمة</th>
+                        <th>المنفّذ</th>
+                        <th>الحالة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="color:var(--text-secondary);">2025-04-14 14:32</td>
+                        <td><strong>BTCUSDT</strong></td>
+                        <td><span class="badge-status badge-buy">شراء</span></td>
+                        <td>0.015</td>
+                        <td>$67,432.50</td>
+                        <td>$1,011.49</td>
+                        <td><span style="font-size:12px;">🤖 آلي</span></td>
+                        <td><span class="badge-status badge-filled">● مكتمل</span></td>
+                    </tr>
+                    <tr>
+                        <td style="color:var(--text-secondary);">2025-04-14 11:18</td>
+                        <td><strong>ETHUSDT</strong></td>
+                        <td><span class="badge-status badge-sell">بيع</span></td>
+                        <td>0.500</td>
+                        <td>$3,450.00</td>
+                        <td>$1,725.00</td>
+                        <td><span style="font-size:12px;">👤 يدوي</span></td>
+                        <td><span class="badge-status badge-filled">● مكتمل</span></td>
+                    </tr>
+                    <tr>
+                        <td style="color:var(--text-secondary);">2025-04-13 22:45</td>
+                        <td><strong>SOLUSDT</strong></td>
+                        <td><span class="badge-status badge-buy">شراء</span></td>
+                        <td>5.000</td>
+                        <td>$140.20</td>
+                        <td>$701.00</td>
+                        <td><span style="font-size:12px;">🤖 آلي</span></td>
+                        <td><span class="badge-status badge-filled">● مكتمل</span></td>
+                    </tr>
+                    <tr>
+                        <td style="color:var(--text-secondary);">2025-04-13 18:10</td>
+                        <td><strong>BTCUSDT</strong></td>
+                        <td><span class="badge-status badge-buy">شراء</span></td>
+                        <td>0.020</td>
+                        <td>$66,800.00</td>
+                        <td>$1,336.00</td>
+                        <td><span style="font-size:12px;">🤖 آلي</span></td>
+                        <td><span class="badge-status badge-filled">● مكتمل</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ============================== -->
+    <!-- USER: Settings                 -->
+    <!-- ============================== -->
+    <div class="page" id="page-user-settings">
+        <div class="page-label">⚙️ الإعدادات الشخصية</div>
+
+        <div class="settings-grid">
+            <div class="settings-section">
+                <h4>🔗 ربط المنصة</h4>
+                <div class="form-group">
+                    <label>المنصة</label>
+                    <select class="form-input">
+                        <option>Binance</option>
+                        <option>Bybit</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input class="form-input" type="password" value="••••••••••••••••" />
+                </div>
+                <div class="form-group">
+                    <label>API Secret</label>
+                    <input class="form-input" type="password" value="••••••••••••••••" />
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-primary">حفظ</button>
+                    <button class="btn btn-danger">فصل المحفظة</button>
+                </div>
+                <div style="margin-top:12px; padding:10px 14px; background:var(--accent-green-soft); border-radius:var(--radius-sm); font-size:12px; color:var(--accent-green);">
+                    ✓ محفظة Binance مربوطة — آخر مزامنة: منذ 5 دقائق
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h4>🤖 التداول الآلي</h4>
+                <div class="form-row">
+                    <div>
+                        <div class="form-row-label">تفعيل التداول الآلي</div>
+                        <div class="form-row-desc">يحتاج موافقة الأدمن</div>
+                    </div>
+                    <label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+                </div>
+                <div style="margin-top:16px;">
+                    <div class="form-group">
+                        <label>الحد الأقصى لعدد العمليات اليومية</label>
+                        <input class="form-input" type="number" value="5" />
+                    </div>
+                    <div class="form-group">
+                        <label>الحد الأدنى للسعر (USDT)</label>
+                        <input class="form-input" type="number" value="50" />
+                    </div>
+                    <div class="form-group">
+                        <label>الحد الأقصى للسعر (USDT)</label>
+                        <input class="form-input" type="number" value="500" />
+                    </div>
+                    <div class="form-group">
+                        <label>نسبة المحفظة القصوى لكل صفقة (%)</label>
+                        <input class="form-input" type="number" value="10" />
+                    </div>
+                </div>
+                <button class="btn btn-primary">حفظ الحدود</button>
+            </div>
+
+            <div class="settings-section">
+                <h4>🔔 التنبيهات</h4>
+                <div class="form-group">
+                    <label>Telegram Chat ID</label>
+                    <input class="form-input" type="text" placeholder="123456789" value="987654321" />
+                </div>
+                <div class="form-group">
+                    <label>البريد الإلكتروني للتنبيهات</label>
+                    <input class="form-input" type="email" value="sara@team.com" />
+                </div>
+                <div style="margin-top:16px;">
+                    <div class="form-row">
+                        <div>
+                            <div class="form-row-label">تنبيهات الفرص</div>
+                            <div class="form-row-desc">عند رصد فرصة شراء أو بيع</div>
+                        </div>
+                        <label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+                    </div>
+                    <div class="form-row">
+                        <div>
+                            <div class="form-row-label">تنبيهات الصفقات</div>
+                            <div class="form-row-desc">عند تنفيذ صفقة آلية</div>
+                        </div>
+                        <label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+                    </div>
+                    <div class="form-row">
+                        <div>
+                            <div class="form-row-label">ملخص يومي</div>
+                            <div class="form-row-desc">تقرير يومي عبر Email و Telegram</div>
+                        </div>
+                        <label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+                    </div>
+                </div>
+                <button class="btn btn-primary" style="margin-top:12px;">حفظ التنبيهات</button>
+            </div>
+
+            <div class="settings-section">
+                <h4>👤 الحساب</h4>
+                <div class="form-group">
+                    <label>اسم المستخدم</label>
+                    <input class="form-input" type="text" value="sara_khalid" />
+                </div>
+                <div class="form-group">
+                    <label>البريد الإلكتروني</label>
+                    <input class="form-input" type="email" value="sara@team.com" />
+                </div>
+                <div class="form-group">
+                    <label>كلمة المرور الجديدة</label>
+                    <input class="form-input" type="password" placeholder="اتركه فارغاً إذا لم ترد التغيير" />
+                </div>
+                <button class="btn btn-primary">تحديث الحساب</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================== -->
+    <!-- REPORTS (Admin & User)         -->
+    <!-- ============================== -->
+    <div class="page" id="page-admin-reports">
+        <div class="page-label">📊 التقارير</div>
+
+        <div class="report-card">
+            <div class="report-header">
+                <h3>📊 التقرير اليومي</h3>
+                <div class="date">14 أبريل 2025 — الإثنين</div>
+            </div>
+            <div class="report-body">
+                <div class="report-stats">
+                    <div class="report-stat">
+                        <div class="stat-icon">💰</div>
+                        <div class="stat-label">الرصيد الكلي</div>
+                        <div class="stat-value">$12,458.32</div>
+                    </div>
+                    <div class="report-stat">
+                        <div class="stat-icon">📈</div>
+                        <div class="stat-label">ربح اليوم</div>
+                        <div class="stat-value" style="color:var(--accent-green);">+$632.50 (+5.2%)</div>
+                    </div>
+                    <div class="report-stat">
+                        <div class="stat-icon">🔄</div>
+                        <div class="stat-label">صفقات منفّذة</div>
+                        <div class="stat-value">4</div>
+                    </div>
+                    <div class="report-stat">
+                        <div class="stat-icon">⚠️</div>
+                        <div class="stat-label">قرارات "لا فرصة"</div>
+                        <div class="stat-value">5</div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-bottom:20px;">
+                    <div class="card-header"><h3>أفضل وأسوأ صفقة</h3></div>
+                    <table>
+                        <thead><tr><th></th><th>الزوج</th><th>النوع</th><th>الربح/الخسارة</th></tr></thead>
+                        <tbody>
+                            <tr>
+                                <td>🏆 الأفضل</td>
+                                <td><strong>BTCUSDT</strong></td>
+                                <td><span class="badge-status badge-buy">شراء</span></td>
+                                <td style="color:var(--accent-green); font-weight:600;">+$320.40</td>
+                            </tr>
+                            <tr>
+                                <td>📉 الأسوأ</td>
+                                <td><strong>ETHUSDT</strong></td>
+                                <td><span class="badge-status badge-sell">بيع</span></td>
+                                <td style="color:var(--accent-red); font-weight:600;">-$45.20</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h4 style="margin-bottom:12px; font-size:14px;">📱 معاينة رسالة Telegram</h4>
+                <div class="telegram-preview">📊 <strong>تقرير يومي</strong> — 14 أبريل 2025
+
+💰 الرصيد: <strong>$12,458.32</strong>
+📈 ربح اليوم: <strong style="color:#10b981;">+$632.50 (+5.2%)</strong>
+
+🔄 صفقات منفّذة: <strong>4</strong>
+   ├ 🤖 آلية: 3
+   └ 👤 يدوية: 1
+
+🏆 أفضل صفقة: BTCUSDT شراء (+$320.40)
+📉 أسوأ صفقة: ETHUSDT بيع (-$45.20)
+
+⚠️ قرارات "لا فرصة": <strong>5 عملات</strong>
+   SOL, BNB, XRP, ADA, DOGE
+
+✅ الخلاصة: يوم إيجابي مع فرصتين حقيقيتين</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Reports (same content, different context) -->
+    <div class="page" id="page-user-reports">
+        <div class="page-label">📋 تقاريري</div>
+
+        <div class="report-card">
+            <div class="report-header">
+                <h3>📊 التقرير اليومي</h3>
+                <div class="date">14 أبريل 2025 — الإثنين</div>
+            </div>
+            <div class="report-body">
+                <div class="report-stats">
+                    <div class="report-stat">
+                        <div class="stat-icon">💰</div>
+                        <div class="stat-label">الرصيد الكلي</div>
+                        <div class="stat-value">$12,458.32</div>
+                    </div>
+                    <div class="report-stat">
+                        <div class="stat-icon">📈</div>
+                        <div class="stat-label">ربح اليوم</div>
+                        <div class="stat-value" style="color:var(--accent-green);">+$632.50 (+5.2%)</div>
+                    </div>
+                    <div class="report-stat">
+                        <div class="stat-icon">🔄</div>
+                        <div class="stat-label">صفقات منفّذة</div>
+                        <div class="stat-value">4</div>
+                    </div>
+                    <div class="report-stat">
+                        <div class="stat-icon">⚠️</div>
+                        <div class="stat-label">قرارات "لا فرصة"</div>
+                        <div class="stat-value">5</div>
+                    </div>
+                </div>
+
+                <h4 style="margin-bottom:12px; font-size:14px;">📱 شكل رسالة Telegram</h4>
+                <div class="telegram-preview">📊 <strong>تقرير يومي</strong> — 14 أبريل 2025
+
+💰 الرصيد: <strong>$12,458.32</strong>
+📈 ربح اليوم: <strong style="color:#10b981;">+$632.50 (+5.2%)</strong>
+
+🔄 صفقات منفّذة: <strong>4</strong>
+   ├ 🤖 آلية: 3
+   └ 👤 يدوية: 1
+
+🏆 أفضل صفقة: BTCUSDT شراء (+$320.40)
+📉 أسوأ صفقة: ETHUSDT بيع (-$45.20)
+
+⚠️ قرارات "لا فرصة": <strong>5 عملات</strong>
+   SOL, BNB, XRP, ADA, DOGE
+
+✅ الخلاصة: يوم إيجابي مع فرصتين حقيقيتين</div>
+            </div>
+        </div>
+    </div>
+
+</main>
+
+<!-- ===== ROLE SWITCHER ===== -->
+<div class="role-switcher">
+    <button class="role-btn active" onclick="switchRole('admin', this)">🔒 أدمن</button>
+    <button class="role-btn" onclick="switchRole('user', this)">👤 مستخدم</button>
+</div>
+
+<script>
+    const pageTitles = {
+        'admin-users': 'إدارة المستخدمين',
+        'admin-wallets': 'مراقبة المحافظ',
+        'admin-bot': 'إعدادات البوت',
+        'admin-reports': 'التقارير',
+        'user-analysis': 'تحليل اليوم',
+        'user-portfolio': 'محفظتي',
+        'user-settings': 'الإعدادات',
+        'user-reports': 'تقاريري',
+    };
+
+    function showPage(pageId, navEl) {
+        // Hide all pages
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        // Show target
+        document.getElementById('page-' + pageId).classList.add('active');
+        // Update nav
+        const nav = navEl.closest('.sidebar-nav');
+        nav.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        navEl.classList.add('active');
+        // Update topbar
+        document.getElementById('topbar-title').innerHTML = 
+            pageTitles[pageId] + '<span>آخر تحديث: منذ 3 دقائق</span>';
+    }
+
+    function switchRole(role, btn) {
+        document.querySelectorAll('.role-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        if (role === 'admin') {
+            document.getElementById('admin-nav').style.display = '';
+            document.getElementById('user-nav').style.display = 'none';
+            document.getElementById('sidebar-name').textContent = 'محمد أحمد';
+            document.getElementById('sidebar-role').textContent = 'أدمن';
+            document.getElementById('sidebar-avatar').textContent = 'م';
+            // Show first admin page
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById('page-admin-users').classList.add('active');
+            document.getElementById('admin-nav').querySelectorAll('.nav-item').forEach((n,i) => {
+                n.classList.toggle('active', i === 0);
+            });
+            document.getElementById('topbar-title').innerHTML = 
+                'إدارة المستخدمين<span>آخر تحديث: منذ 3 دقائق</span>';
+        } else {
+            document.getElementById('admin-nav').style.display = 'none';
+            document.getElementById('user-nav').style.display = '';
+            document.getElementById('sidebar-name').textContent = 'سارة خالد';
+            document.getElementById('sidebar-role').textContent = 'مستخدم';
+            document.getElementById('sidebar-avatar').textContent = 'س';
+            document.getElementById('sidebar-avatar').style.background = 'linear-gradient(135deg,#10b981,#059669)';
+            // Show first user page
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById('page-user-analysis').classList.add('active');
+            document.getElementById('user-nav').querySelectorAll('.nav-item').forEach((n,i) => {
+                n.classList.toggle('active', i === 0);
+            });
+            document.getElementById('topbar-title').innerHTML = 
+                'تحليل اليوم<span>آخر تحديث: منذ 3 دقائق</span>';
+        }
+    }
+</script>
+
+</body>
+</html>
