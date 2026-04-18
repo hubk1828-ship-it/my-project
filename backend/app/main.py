@@ -278,24 +278,21 @@ async def lifespan(app: FastAPI):
     await init_db()
 
     # Migrate: add missing columns to paper_bot_settings
+    from sqlalchemy import text
     async with engine.begin() as conn:
-        import sqlite3
-        def migrate(connection):
-            cursor = connection.execute("PRAGMA table_info(paper_bot_settings)")
-            columns = [row[1] for row in cursor.fetchall()]
-            migrations = [
-                ("max_daily_loss", "NUMERIC DEFAULT 200"),
-                ("min_loss_limit", "NUMERIC DEFAULT 10"),
-                ("max_loss_limit", "NUMERIC DEFAULT 500"),
-            ]
-            for col_name, col_type in migrations:
-                if col_name not in columns:
-                    try:
-                        connection.execute(f"ALTER TABLE paper_bot_settings ADD COLUMN {col_name} {col_type}")
-                        logger.info(f"✅ Added column {col_name} to paper_bot_settings")
-                    except Exception:
-                        pass
-        await conn.run_sync(lambda c: migrate(c.connection.connection.dbapi_connection))
+        result = await conn.execute(text("PRAGMA table_info(paper_bot_settings)"))
+        columns = [row[1] for row in result.fetchall()]
+        for col_name, col_type in [
+            ("max_daily_loss", "NUMERIC DEFAULT 200"),
+            ("min_loss_limit", "NUMERIC DEFAULT 10"),
+            ("max_loss_limit", "NUMERIC DEFAULT 500"),
+        ]:
+            if col_name not in columns:
+                try:
+                    await conn.execute(text(f"ALTER TABLE paper_bot_settings ADD COLUMN {col_name} {col_type}"))
+                    logger.info(f"✅ Added column {col_name} to paper_bot_settings")
+                except Exception:
+                    pass
 
     await seed_default_data()
 
