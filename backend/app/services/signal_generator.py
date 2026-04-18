@@ -301,7 +301,7 @@ async def update_signal_statuses(db: AsyncSession):
 
     symbols = list(set(s.symbol for s in signals))
     prices = await get_prices_batch(symbols)
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
 
     for signal in signals:
         price = prices.get(signal.symbol, 0)
@@ -309,9 +309,14 @@ async def update_signal_statuses(db: AsyncSession):
             continue
 
         # Check expiry
-        if signal.expires_at and now > signal.expires_at:
-            signal.status = "expired"
-            signal.closed_at = now
+        expires = signal.expires_at
+        if expires:
+            # Strip timezone info if present (SQLite stores naive)
+            if hasattr(expires, 'tzinfo') and expires.tzinfo:
+                expires = expires.replace(tzinfo=None)
+            if now > expires:
+                signal.status = "expired"
+                signal.closed_at = now
             continue
 
         # Check stop loss
