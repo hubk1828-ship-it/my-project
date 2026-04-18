@@ -1,11 +1,11 @@
 """
-Signal Generator — Produces trade signals with targets based on existing analysis results.
+Signal Generator — Smart signals with calculated durations and conservative targets.
 """
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.models.paper_trading import TradeSignal
 from app.models.trade import SupportedSymbol
 from app.models.analysis import BotAnalysis
@@ -15,17 +15,18 @@ logger = logging.getLogger(__name__)
 
 
 def calculate_targets(price: float, side: str, support: float, resistance: float, atr_pct: float = 2.0) -> dict:
-    """Calculate entry, targets, and stop loss."""
+    """Calculate CONSERVATIVE targets — closer targets for higher success rate."""
+    # Use tighter targets: 40%, 70%, 100% of ATR instead of 100%, 180%, 250%
     if side == "long":
-        stop_loss = max(support * 0.995, price * (1 - atr_pct * 1.5 / 100))
-        target_1 = price * (1 + atr_pct / 100)
-        target_2 = resistance if resistance > price * 1.005 else price * (1 + atr_pct * 1.8 / 100)
-        target_3 = resistance * (1 + atr_pct / 100) if resistance > price else price * (1 + atr_pct * 2.5 / 100)
-    else:  # short
-        stop_loss = min(resistance * 1.005, price * (1 + atr_pct * 1.5 / 100))
-        target_1 = price * (1 - atr_pct / 100)
-        target_2 = support if support < price * 0.995 else price * (1 - atr_pct * 1.8 / 100)
-        target_3 = support * (1 - atr_pct / 100) if support < price else price * (1 - atr_pct * 2.5 / 100)
+        stop_loss = max(support * 0.998, price * (1 - atr_pct * 0.8 / 100))
+        target_1 = price * (1 + atr_pct * 0.4 / 100)
+        target_2 = price * (1 + atr_pct * 0.7 / 100)
+        target_3 = min(resistance, price * (1 + atr_pct / 100))
+    else:
+        stop_loss = min(resistance * 1.002, price * (1 + atr_pct * 0.8 / 100))
+        target_1 = price * (1 - atr_pct * 0.4 / 100)
+        target_2 = price * (1 - atr_pct * 0.7 / 100)
+        target_3 = max(support, price * (1 - atr_pct / 100))
 
     return {
         "entry_price": round(price, 8),
@@ -36,11 +37,44 @@ def calculate_targets(price: float, side: str, support: float, resistance: float
     }
 
 
-async def generate_signals(db: AsyncSession) -> List[Dict]:
-    """Generate trade signals from existing bot analysis results."""
-    # Get latest analysis for each symbol (from the last 6 hours)
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=6)
+def estimate_signal_duration(timeframe: str, volatility_pct: float, volume_ratio: float) -> dict:
+    """
+    Estimate signal duration based on timeframe, volatility, and volume.
+    NOT random — calculated from market conditions.
+    """
+    # Base duration per timeframe (in hours)
+    base_hours = {
+        "1m": 0.5, "5m": 1, "15m": 3, "30m": 6,
+        "1h": 12, "2h": 18, "4h": 36,
+        "6h": 48, "8h": 60, "12h": 72,
+        "1d": 168, "3d": 336, "1w": 504, "1M": 720,
+    }
+    base = base_hours.get(timeframe, 12)
 
+    # High volatility = shorter duration (price moves faster)
+    if volatility_pct > 5:
+        base *= 0.6
+    elif volatility_pct > 3:
+        base *= 0.8
+    elif volatility_pct < 1:
+        base *= 1.3
+
+    # High volume = faster target reach
+    if volume_ratio > 2:
+        base *= 0.7
+    elif volume_ratio > 1.5:
+        base *= 0.85
+
+    hours = max(1, int(base))
+    return {
+        "duration_hours": hours,
+        "expires_at": datetime.utcnow() + timedelta(hours=hours),
+        "reason": f"مدة تقديرية {hours}h بناءً على الفريم {timeframe} والتقلب {volatility_pct:.1f}% والحجم {volume_ratio:.1f}x",
+    }
+
+
+async def generate_signals(db: AsyncSession) -> List[Dict]:
+    """Generate signals from existing analysis results."""
     result = await db.execute(
         select(SupportedSymbol).where(SupportedSymbol.is_active == True)
     )
@@ -49,25 +83,16 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
 
     for sym in symbols:
         try:
-            # Get the most recent analysis for this symbol
             a_result = await db.execute(
                 select(BotAnalysis)
-                .where(
-                    BotAnalysis.symbol == sym.symbol,
-                    BotAnalysis.created_at >= cutoff,
-                )
+                .where(BotAnalysis.symbol == sym.symbol)
                 .order_by(BotAnalysis.created_at.desc())
                 .limit(1)
             )
             analysis = a_result.scalar_one_or_none()
-            if not analysis:
+            if not analysis or analysis.decision == "no_opportunity":
                 continue
 
-            # Skip no_opportunity
-            if analysis.decision == "no_opportunity":
-                continue
-
-            # Extract data from existing analysis
             indicators = analysis.technical_indicators or {}
             current_price = indicators.get("current_price", 0)
             if current_price <= 0:
@@ -75,19 +100,10 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
 
             support = indicators.get("support", current_price * 0.97)
             resistance = indicators.get("resistance", current_price * 1.03)
-            rsi = indicators.get("rsi", 50)
-            trend = indicators.get("trend", "عرضي")
-            volume_ratio = indicators.get("volume_ratio", 0)
-            smc = indicators.get("smc")
             confidence = float(analysis.confidence_score or 50)
-
-            # Determine signal type from analysis decision
             signal_type = "long" if analysis.decision == "buy" else "short"
+            volume_ratio = indicators.get("volume_ratio", 1)
 
-            # Build reasoning from analysis
-            reasons = analysis.reasoning.split("\n") if analysis.reasoning else []
-
-            # Check for duplicate active signal for same symbol + type
             existing = await db.execute(
                 select(TradeSignal).where(
                     TradeSignal.symbol == sym.symbol,
@@ -98,15 +114,12 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
             if existing.scalar_one_or_none():
                 continue
 
-            # Calculate ATR-like percentage from support/resistance
             atr_pct = abs(resistance - support) / current_price * 100 if resistance > support else 2.0
             atr_pct = max(1.0, min(atr_pct, 8.0))
-
-            # Calculate targets
             targets = calculate_targets(current_price, signal_type, support, resistance, atr_pct)
+            duration = estimate_signal_duration("1h", atr_pct, volume_ratio)
 
-            # SHORT-TERM signal
-            short_signal = TradeSignal(
+            signal = TradeSignal(
                 symbol=sym.symbol,
                 signal_type=signal_type,
                 timeframe_type="short_term",
@@ -119,55 +132,14 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
                 reasoning=analysis.reasoning or "بناءً على التحليل الفني",
                 status="active",
                 technical_data={
-                    "rsi": rsi,
-                    "trend": trend,
-                    "volume_ratio": volume_ratio,
-                    "support": support,
-                    "resistance": resistance,
-                    "analysis_decision": analysis.decision,
+                    **indicators,
                     "analysis_id": analysis.id,
+                    "duration_reason": duration["reason"],
                 },
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
+                expires_at=duration["expires_at"],
             )
-            db.add(short_signal)
+            db.add(signal)
             generated.append({"symbol": sym.symbol, "type": signal_type, "tf": "short_term", "confidence": confidence})
-
-            # LONG-TERM signal (only if confidence is high enough)
-            if confidence >= 50:
-                # Check for duplicate long-term
-                existing_lt = await db.execute(
-                    select(TradeSignal).where(
-                        TradeSignal.symbol == sym.symbol,
-                        TradeSignal.status == "active",
-                        TradeSignal.timeframe_type == "long_term",
-                    )
-                )
-                if not existing_lt.scalar_one_or_none():
-                    lt_atr = atr_pct * 1.5
-                    lt_targets = calculate_targets(current_price, signal_type, support, resistance, lt_atr)
-
-                    lt_signal = TradeSignal(
-                        symbol=sym.symbol,
-                        signal_type=signal_type,
-                        timeframe_type="long_term",
-                        entry_price=lt_targets["entry_price"],
-                        target_1=lt_targets["target_1"],
-                        target_2=lt_targets["target_2"],
-                        target_3=lt_targets["target_3"],
-                        stop_loss=lt_targets["stop_loss"],
-                        confidence=min(confidence + 5, 100),
-                        reasoning=f"📊 توصية طويلة المدى\n{analysis.reasoning or ''}",
-                        status="active",
-                        technical_data={
-                            "rsi": rsi,
-                            "trend": trend,
-                            "support": support,
-                            "resistance": resistance,
-                        },
-                        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
-                    )
-                    db.add(lt_signal)
-                    generated.append({"symbol": sym.symbol, "type": signal_type, "tf": "long_term"})
 
         except Exception as e:
             logger.error(f"Signal generation failed for {sym.symbol}: {e}")
@@ -178,7 +150,7 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
 
 
 async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List[Dict]:
-    """Generate signals by running live analysis with a specific timeframe."""
+    """Generate signals with live analysis and smart duration calculation."""
     from app.services.analyzer import analyze_chart, check_momentum
 
     result = await db.execute(
@@ -201,14 +173,13 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
             resistance = chart.get("resistance", current_price * 1.03)
             trend = chart.get("trend", "عرضي")
             smc_signal = chart.get("smc_signal")
-            smc_data = chart.get("smc")
+            volume_ratio = momentum.get("ratio", 1)
 
-            # Determine signal from analysis
             signal_type = None
             confidence = 0
             reasons = []
 
-            # SMC signal
+            # SMC
             if smc_signal and smc_signal.get("confidence", 0) >= 40:
                 smc_decision = smc_signal.get("decision")
                 if smc_decision in ("buy", "sell"):
@@ -216,7 +187,7 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
                     confidence += smc_signal["confidence"] * 0.5
                     reasons.extend(smc_signal.get("signals", []))
 
-            # Trend-based
+            # Trend
             if trend == "صاعد" and rsi < 75:
                 signal_type = signal_type or "long"
                 confidence += 25
@@ -236,7 +207,7 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
 
             confidence = min(max(confidence, 30), 100)
 
-            # Check duplicate
+            # Duplicate check
             existing = await db.execute(
                 select(TradeSignal).where(
                     TradeSignal.symbol == sym.symbol,
@@ -251,10 +222,12 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
             atr_pct = max(1.0, min(atr_pct, 8.0))
             targets = calculate_targets(current_price, signal_type, support, resistance, atr_pct)
 
-            # Determine timeframe type
+            # Smart duration
+            duration = estimate_signal_duration(timeframe, atr_pct, volume_ratio)
             short_tfs = ["1m", "5m", "15m", "30m", "1h", "2h"]
             tf_type = "short_term" if timeframe in short_tfs else "long_term"
-            expiry = timedelta(hours=24) if tf_type == "short_term" else timedelta(days=7)
+
+            reasons.append(f"⏱️ {duration['reason']}")
 
             signal = TradeSignal(
                 symbol=sym.symbol,
@@ -274,12 +247,18 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
                     "trend": trend,
                     "support": support,
                     "resistance": resistance,
-                    "volume_ratio": momentum.get("ratio"),
+                    "volume_ratio": volume_ratio,
+                    "duration_hours": duration["duration_hours"],
+                    "duration_reason": duration["reason"],
                 },
-                expires_at=datetime.now(timezone.utc) + expiry,
+                expires_at=duration["expires_at"],
             )
             db.add(signal)
-            generated.append({"symbol": sym.symbol, "type": signal_type, "tf": tf_type, "confidence": confidence, "timeframe": timeframe})
+            generated.append({
+                "symbol": sym.symbol, "type": signal_type, "tf": tf_type,
+                "confidence": confidence, "timeframe": timeframe,
+                "duration_hours": duration["duration_hours"],
+            })
 
         except Exception as e:
             logger.error(f"Live signal generation failed for {sym.symbol}: {e}")
@@ -290,12 +269,11 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
 
 
 async def update_signal_statuses(db: AsyncSession):
-    """Check active signals and update their status based on current prices."""
+    """Check active signals — auto-close expired ones and calculate PnL."""
     result = await db.execute(
         select(TradeSignal).where(TradeSignal.status == "active")
     )
     signals = result.scalars().all()
-
     if not signals:
         return
 
@@ -308,16 +286,15 @@ async def update_signal_statuses(db: AsyncSession):
         if price <= 0:
             continue
 
-        # Check expiry
+        # Check expiry (timezone-safe)
         expires = signal.expires_at
         if expires:
-            # Strip timezone info if present (SQLite stores naive)
             if hasattr(expires, 'tzinfo') and expires.tzinfo:
                 expires = expires.replace(tzinfo=None)
             if now > expires:
                 signal.status = "expired"
                 signal.closed_at = now
-            continue
+                continue
 
         # Check stop loss
         if signal.signal_type == "long" and price <= float(signal.stop_loss):
@@ -339,7 +316,7 @@ async def update_signal_statuses(db: AsyncSession):
                 signal.hit_target_level = 2
             elif price >= float(signal.target_1):
                 signal.hit_target_level = 1
-        else:  # short
+        else:
             if signal.target_3 and price <= float(signal.target_3):
                 signal.status = "hit_target"
                 signal.hit_target_level = 3
@@ -351,3 +328,143 @@ async def update_signal_statuses(db: AsyncSession):
 
     await db.commit()
     logger.info("✅ Signal statuses updated")
+
+
+async def get_signal_performance(db: AsyncSession, symbol: str = None) -> dict:
+    """Analyze signal performance — success/failure rates."""
+    query = select(TradeSignal).where(TradeSignal.status.in_(["hit_target", "stopped", "expired"]))
+    if symbol:
+        query = query.where(TradeSignal.symbol == symbol)
+
+    result = await db.execute(query)
+    closed_signals = result.scalars().all()
+
+    if not closed_signals:
+        return {"total": 0, "success_rate": 0, "loss_rate": 0, "signals": []}
+
+    hits = [s for s in closed_signals if s.status == "hit_target"]
+    stops = [s for s in closed_signals if s.status == "stopped"]
+    expired = [s for s in closed_signals if s.status == "expired"]
+    total = len(closed_signals)
+
+    # Calculate PnL for each
+    performance_list = []
+    total_pnl_pct = 0
+    for s in closed_signals:
+        entry = float(s.entry_price)
+        if s.status == "hit_target" and s.hit_target_level:
+            target_key = f"target_{s.hit_target_level}"
+            target_val = float(getattr(s, target_key, entry))
+            pnl_pct = abs(target_val - entry) / entry * 100
+        elif s.status == "stopped":
+            pnl_pct = -abs(float(s.stop_loss) - entry) / entry * 100
+        else:
+            pnl_pct = 0
+
+        total_pnl_pct += pnl_pct
+        performance_list.append({
+            "id": s.id,
+            "symbol": s.symbol,
+            "signal_type": s.signal_type,
+            "status": s.status,
+            "confidence": float(s.confidence),
+            "pnl_pct": round(pnl_pct, 2),
+            "entry_price": entry,
+            "hit_level": s.hit_target_level,
+            "created_at": str(s.created_at) if s.created_at else None,
+            "closed_at": str(s.closed_at) if s.closed_at else None,
+        })
+
+    return {
+        "total": total,
+        "success": len(hits),
+        "stopped": len(stops),
+        "expired": len(expired),
+        "success_rate": round(len(hits) / total * 100, 1) if total else 0,
+        "loss_rate": round(len(stops) / total * 100, 1) if total else 0,
+        "avg_pnl_pct": round(total_pnl_pct / total, 2) if total else 0,
+        "total_pnl_pct": round(total_pnl_pct, 2),
+        "signals": sorted(performance_list, key=lambda x: x.get("created_at", ""), reverse=True),
+    }
+
+
+async def analyze_bot_losses(db: AsyncSession) -> dict:
+    """Analyze losing pattern and suggest improvements."""
+    result = await db.execute(
+        select(TradeSignal)
+        .where(TradeSignal.status.in_(["hit_target", "stopped", "expired"]))
+        .order_by(TradeSignal.created_at.desc())
+        .limit(50)
+    )
+    recent = result.scalars().all()
+
+    if len(recent) < 5:
+        return {"analysis": "بيانات غير كافية للتحليل (أقل من 5 صفقات مغلقة)", "issues": [], "recommendations": []}
+
+    stops = [s for s in recent if s.status == "stopped"]
+    hits = [s for s in recent if s.status == "hit_target"]
+    expired = [s for s in recent if s.status == "expired"]
+    total = len(recent)
+
+    loss_rate = len(stops) / total * 100
+    issues = []
+    recommendations = []
+
+    # Check loss rate
+    if loss_rate > 50:
+        issues.append(f"⚠️ نسبة وقف الخسارة مرتفعة: {loss_rate:.0f}% ({len(stops)} من {total})")
+        recommendations.append("🔧 تضييق وقف الخسارة أو زيادة المسافة")
+
+    # Check if expired signals are too many
+    if len(expired) / total > 0.3:
+        issues.append(f"⏰ {len(expired)} توصيات انتهت بدون تحقيق هدف ({len(expired)/total*100:.0f}%)")
+        recommendations.append("🔧 زيادة مدة التوصيات أو تقريب الأهداف")
+
+    # Analyze by signal type
+    long_stops = [s for s in stops if s.signal_type == "long"]
+    short_stops = [s for s in stops if s.signal_type == "short"]
+    long_total = len([s for s in recent if s.signal_type == "long"])
+    short_total = len([s for s in recent if s.signal_type == "short"])
+
+    if long_total > 3 and len(long_stops) / long_total > 0.6:
+        issues.append(f"📈 صفقات Long تخسر بنسبة عالية: {len(long_stops)}/{long_total}")
+        recommendations.append("🔧 تقليل صفقات الشراء أو تحسين نقاط الدخول")
+
+    if short_total > 3 and len(short_stops) / short_total > 0.6:
+        issues.append(f"📉 صفقات Short تخسر بنسبة عالية: {len(short_stops)}/{short_total}")
+        recommendations.append("🔧 تقليل صفقات البيع أو انتظار تأكيدات أقوى")
+
+    # Check confidence correlation
+    low_conf_losses = [s for s in stops if float(s.confidence) < 50]
+    if len(low_conf_losses) > len(stops) * 0.5:
+        issues.append(f"🎯 {len(low_conf_losses)} خسائر كانت بثقة منخفضة (<50%)")
+        recommendations.append("🔧 رفع الحد الأدنى للثقة المطلوبة للتوصيات")
+
+    # Check symbols with most losses
+    symbol_losses = {}
+    for s in stops:
+        symbol_losses[s.symbol] = symbol_losses.get(s.symbol, 0) + 1
+    worst_symbols = sorted(symbol_losses.items(), key=lambda x: x[1], reverse=True)[:3]
+    for sym, count in worst_symbols:
+        if count >= 3:
+            issues.append(f"💥 {sym} سجلت {count} خسائر")
+            recommendations.append(f"🔧 مراجعة تحليل {sym} أو تقليل التداول عليها")
+
+    if not issues:
+        issues.append("✅ أداء البوت ضمن الحدود المقبولة")
+
+    if not recommendations:
+        recommendations.append("✅ لا توجد توصيات تحسين حالياً")
+
+    return {
+        "analysis": f"تحليل آخر {total} توصية — نسبة النجاح: {len(hits)/total*100:.0f}% | الخسارة: {loss_rate:.0f}%",
+        "total_analyzed": total,
+        "success_count": len(hits),
+        "loss_count": len(stops),
+        "expired_count": len(expired),
+        "success_rate": round(len(hits) / total * 100, 1),
+        "loss_rate": round(loss_rate, 1),
+        "issues": issues,
+        "recommendations": recommendations,
+        "worst_symbols": worst_symbols,
+    }

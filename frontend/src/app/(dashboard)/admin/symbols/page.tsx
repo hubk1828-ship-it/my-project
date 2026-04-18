@@ -237,6 +237,8 @@ export default function AdminSymbolsPage() {
                   </td>
                   <td style={{ display: "flex", gap: 8 }}>
                     <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 12px" }}
+                      onClick={() => window.location.href = `/signals?symbol=${sym.symbol}`}>📊 التوصيات</button>
+                    <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 12px" }}
                       onClick={() => toggleSymbol(sym.id, sym.is_active)}>
                       {sym.is_active ? "إيقاف" : "تفعيل"}
                     </button>

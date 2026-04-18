@@ -153,6 +153,11 @@ export const paperApi = {
   getActiveSignals: () => api.get("/api/paper/signals/active"),
   generateSignals: (timeframe?: string) =>
     api.post(`/api/paper/signals/generate?timeframe=${timeframe || "1h"}`),
+  getSignalPerformance: (symbol?: string) =>
+    api.get("/api/paper/signals/performance", { params: { symbol } }),
+  getSignalHistory: (symbol: string) =>
+    api.get(`/api/paper/signals/history/${symbol}`),
+  getBotAnalysis: () => api.get("/api/paper/signals/bot-analysis"),
 };
 
 // ===== WebSocket URL =====

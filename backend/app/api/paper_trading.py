@@ -314,3 +314,68 @@ async def trigger_signal_generation(
         import logging
         logging.getLogger(__name__).error(f"Signal generation error: {traceback.format_exc()}")
         raise HTTPException(500, f"خطأ في التوليد: {str(e)}")
+
+
+@router.get("/signals/performance")
+async def get_signal_performance_stats(
+    symbol: Optional[str] = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get signal performance statistics."""
+    from app.services.signal_generator import get_signal_performance
+    return await get_signal_performance(db, symbol)
+
+
+@router.get("/signals/history/{symbol}")
+async def get_signal_history_for_symbol(
+    symbol: str,
+    limit: int = Query(default=50, le=200),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get signal history for a specific symbol."""
+    result = await db.execute(
+        select(TradeSignal)
+        .where(TradeSignal.symbol == symbol)
+        .order_by(desc(TradeSignal.created_at))
+        .limit(limit)
+    )
+    signals = result.scalars().all()
+
+    # Calculate PnL for each closed signal
+    history = []
+    for s in signals:
+        entry = float(s.entry_price)
+        pnl_pct = 0
+        if s.status == "hit_target" and s.hit_target_level:
+            target_val = float(getattr(s, f"target_{s.hit_target_level}", entry))
+            pnl_pct = abs(target_val - entry) / entry * 100
+        elif s.status == "stopped":
+            pnl_pct = -abs(float(s.stop_loss) - entry) / entry * 100
+
+        history.append({
+            "id": s.id, "symbol": s.symbol, "signal_type": s.signal_type,
+            "timeframe_type": s.timeframe_type, "entry_price": entry,
+            "target_1": float(s.target_1), "target_2": float(s.target_2) if s.target_2 else None,
+            "target_3": float(s.target_3) if s.target_3 else None,
+            "stop_loss": float(s.stop_loss), "confidence": float(s.confidence),
+            "status": s.status, "hit_target_level": s.hit_target_level,
+            "pnl_pct": round(pnl_pct, 2),
+            "reasoning": s.reasoning,
+            "technical_data": s.technical_data,
+            "created_at": str(s.created_at) if s.created_at else None,
+            "expires_at": str(s.expires_at) if s.expires_at else None,
+            "closed_at": str(s.closed_at) if s.closed_at else None,
+        })
+    return history
+
+
+@router.get("/signals/bot-analysis")
+async def get_bot_loss_analysis(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Analyze bot decisions and identify issues when losses increase."""
+    from app.services.signal_generator import analyze_bot_losses
+    return await analyze_bot_losses(db)
