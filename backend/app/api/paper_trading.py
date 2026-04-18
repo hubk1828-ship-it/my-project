@@ -292,3 +292,15 @@ async def get_active_signals(
         .order_by(desc(TradeSignal.confidence))
     )
     return result.scalars().all()
+
+
+@router.post("/signals/generate")
+async def trigger_signal_generation(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manually trigger signal generation and status update."""
+    from app.services.signal_generator import generate_signals, update_signal_statuses
+    await update_signal_statuses(db)
+    generated = await generate_signals(db)
+    return {"message": f"تم توليد {len(generated)} توصية جديدة", "signals": generated}
