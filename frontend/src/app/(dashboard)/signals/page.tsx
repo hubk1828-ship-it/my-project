@@ -269,7 +269,7 @@ export default function SignalsPage() {
                       </div>
                     </div>
                     <div style={{ padding: "8px 20px 12px" }}>
-                      <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.7, whiteSpace: "pre-wrap", background: "var(--bg-secondary)", padding: "8px 12px", borderRadius: 8, maxHeight: 80, overflowY: "auto", fontSize: 11 }}>
+                      <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.7, whiteSpace: "pre-wrap", background: "var(--bg-secondary)", padding: "8px 12px", borderRadius: 8, maxHeight: 80, overflowY: "auto" }}>
                         {s.reasoning}
                       </div>
                     </div>
