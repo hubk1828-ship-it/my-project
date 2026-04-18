@@ -301,10 +301,16 @@ async def trigger_signal_generation(
     db: AsyncSession = Depends(get_db),
 ):
     """Manually trigger signal generation with custom timeframe."""
+    import traceback
     from app.services.signal_generator import generate_signals_live, update_signal_statuses
     valid_tf = ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"]
     if timeframe not in valid_tf:
         raise HTTPException(400, f"فريم غير صالح. الخيارات: {', '.join(valid_tf)}")
-    await update_signal_statuses(db)
-    generated = await generate_signals_live(db, timeframe)
-    return {"message": f"تم توليد {len(generated)} توصية جديدة ({timeframe})", "signals": generated}
+    try:
+        await update_signal_statuses(db)
+        generated = await generate_signals_live(db, timeframe)
+        return {"message": f"تم توليد {len(generated)} توصية جديدة ({timeframe})", "signals": generated}
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Signal generation error: {traceback.format_exc()}")
+        raise HTTPException(500, f"خطأ في التوليد: {str(e)}")
