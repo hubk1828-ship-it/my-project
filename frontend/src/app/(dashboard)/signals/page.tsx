@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { paperApi } from "@/lib/api";
 
@@ -47,7 +47,7 @@ function timeLeft(expiresAt: string | null) {
   return h > 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h ${m}m`;
 }
 
-export default function SignalsPage() {
+function SignalsPageContent() {
   const searchParams = useSearchParams();
   const symbolParam = searchParams.get("symbol");
 
@@ -354,5 +354,13 @@ export default function SignalsPage() {
         ) : <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>لا توجد بيانات كافية</div>
       )}
     </div>
+  );
+}
+
+export default function SignalsPage() {
+  return (
+    <Suspense fallback={<div style={{ display: "flex", justifyContent: "center", padding: 60 }}><div className="spinner" /></div>}>
+      <SignalsPageContent />
+    </Suspense>
   );
 }
