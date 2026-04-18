@@ -296,11 +296,15 @@ async def get_active_signals(
 
 @router.post("/signals/generate")
 async def trigger_signal_generation(
+    timeframe: str = Query(default="1h", description="1m,5m,15m,30m,1h,4h,1d,1w"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Manually trigger signal generation and status update."""
-    from app.services.signal_generator import generate_signals, update_signal_statuses
+    """Manually trigger signal generation with custom timeframe."""
+    from app.services.signal_generator import generate_signals_live, update_signal_statuses
+    valid_tf = ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"]
+    if timeframe not in valid_tf:
+        raise HTTPException(400, f"فريم غير صالح. الخيارات: {', '.join(valid_tf)}")
     await update_signal_statuses(db)
-    generated = await generate_signals(db)
-    return {"message": f"تم توليد {len(generated)} توصية جديدة", "signals": generated}
+    generated = await generate_signals_live(db, timeframe)
+    return {"message": f"تم توليد {len(generated)} توصية جديدة ({timeframe})", "signals": generated}

@@ -177,6 +177,118 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
     return generated
 
 
+async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List[Dict]:
+    """Generate signals by running live analysis with a specific timeframe."""
+    from app.services.analyzer import analyze_chart, check_momentum
+
+    result = await db.execute(
+        select(SupportedSymbol).where(SupportedSymbol.is_active == True)
+    )
+    symbols = result.scalars().all()
+    generated = []
+
+    for sym in symbols:
+        try:
+            chart = await analyze_chart(sym.symbol, timeframe)
+            momentum = await check_momentum(sym.symbol)
+
+            current_price = chart.get("current_price", 0)
+            if current_price <= 0:
+                continue
+
+            rsi = chart.get("rsi", 50)
+            support = chart.get("support", current_price * 0.97)
+            resistance = chart.get("resistance", current_price * 1.03)
+            trend = chart.get("trend", "عرضي")
+            smc_signal = chart.get("smc_signal")
+            smc_data = chart.get("smc")
+
+            # Determine signal from analysis
+            signal_type = None
+            confidence = 0
+            reasons = []
+
+            # SMC signal
+            if smc_signal and smc_signal.get("confidence", 0) >= 40:
+                smc_decision = smc_signal.get("decision")
+                if smc_decision in ("buy", "sell"):
+                    signal_type = "long" if smc_decision == "buy" else "short"
+                    confidence += smc_signal["confidence"] * 0.5
+                    reasons.extend(smc_signal.get("signals", []))
+
+            # Trend-based
+            if trend == "صاعد" and rsi < 75:
+                signal_type = signal_type or "long"
+                confidence += 25
+                reasons.append(f"📈 اتجاه صاعد على {timeframe} (RSI: {rsi:.0f})")
+            elif trend == "هابط" and rsi > 25:
+                signal_type = signal_type or "short"
+                confidence += 25
+                reasons.append(f"📉 اتجاه هابط على {timeframe} (RSI: {rsi:.0f})")
+
+            # Momentum
+            if momentum.get("is_real"):
+                confidence += 10
+                reasons.append(f"✅ زخم حقيقي ({momentum['reason']})")
+
+            if not signal_type:
+                continue
+
+            confidence = min(max(confidence, 30), 100)
+
+            # Check duplicate
+            existing = await db.execute(
+                select(TradeSignal).where(
+                    TradeSignal.symbol == sym.symbol,
+                    TradeSignal.status == "active",
+                    TradeSignal.signal_type == signal_type,
+                )
+            )
+            if existing.scalar_one_or_none():
+                continue
+
+            atr_pct = abs(resistance - support) / current_price * 100 if resistance > support else 2.0
+            atr_pct = max(1.0, min(atr_pct, 8.0))
+            targets = calculate_targets(current_price, signal_type, support, resistance, atr_pct)
+
+            # Determine timeframe type
+            short_tfs = ["1m", "5m", "15m", "30m", "1h", "2h"]
+            tf_type = "short_term" if timeframe in short_tfs else "long_term"
+            expiry = timedelta(hours=24) if tf_type == "short_term" else timedelta(days=7)
+
+            signal = TradeSignal(
+                symbol=sym.symbol,
+                signal_type=signal_type,
+                timeframe_type=tf_type,
+                entry_price=targets["entry_price"],
+                target_1=targets["target_1"],
+                target_2=targets["target_2"],
+                target_3=targets["target_3"],
+                stop_loss=targets["stop_loss"],
+                confidence=confidence,
+                reasoning="\n".join(reasons),
+                status="active",
+                technical_data={
+                    "timeframe": timeframe,
+                    "rsi": rsi,
+                    "trend": trend,
+                    "support": support,
+                    "resistance": resistance,
+                    "volume_ratio": momentum.get("ratio"),
+                },
+                expires_at=datetime.now(timezone.utc) + expiry,
+            )
+            db.add(signal)
+            generated.append({"symbol": sym.symbol, "type": signal_type, "tf": tf_type, "confidence": confidence, "timeframe": timeframe})
+
+        except Exception as e:
+            logger.error(f"Live signal generation failed for {sym.symbol}: {e}")
+
+    await db.commit()
+    logger.info(f"✅ Generated {len(generated)} live signals ({timeframe})")
+    return generated
+
+
 async def update_signal_statuses(db: AsyncSession):
     """Check active signals and update their status based on current prices."""
     result = await db.execute(

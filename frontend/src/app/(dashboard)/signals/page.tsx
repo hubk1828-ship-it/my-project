@@ -33,7 +33,18 @@ export default function SignalsPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [genResult, setGenResult] = useState("");
+  const [timeframe, setTimeframe] = useState("1h");
 
+  const timeframes = [
+    { value: "1m", label: "1 دقيقة" },
+    { value: "5m", label: "5 دقائق" },
+    { value: "15m", label: "15 دقيقة" },
+    { value: "30m", label: "30 دقيقة" },
+    { value: "1h", label: "1 ساعة" },
+    { value: "4h", label: "4 ساعات" },
+    { value: "1d", label: "يومي" },
+    { value: "1w", label: "أسبوعي" },
+  ];
   const fetchSignals = useCallback(async () => {
     setLoading(true);
     try {
@@ -51,7 +62,7 @@ export default function SignalsPage() {
   async function handleGenerate() {
     setGenerating(true); setGenResult("");
     try {
-      const { data } = await paperApi.generateSignals();
+      const { data } = await paperApi.generateSignals(timeframe);
       setGenResult(data.message);
       fetchSignals();
     } catch (e: any) {
@@ -66,11 +77,17 @@ export default function SignalsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)", marginBottom: 6 }}>🎯 التوصيات والإشارات</h1>
           <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>توصيات تداول مع أهداف ووقف خسارة — مبنية على التحليل الفني + Smart Money</p>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-          <button className="btn btn-primary" onClick={handleGenerate} disabled={generating}
-            style={{ fontSize: 13, padding: "10px 20px" }}>
-            {generating ? "⏳ جارٍ التحليل..." : "🔄 تحديث التوصيات"}
-          </button>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <select className="form-input" value={timeframe} onChange={e => setTimeframe(e.target.value)}
+              style={{ padding: "8px 12px", fontSize: 13, minWidth: 120 }}>
+              {timeframes.map(tf => <option key={tf.value} value={tf.value}>{tf.label}</option>)}
+            </select>
+            <button className="btn btn-primary" onClick={handleGenerate} disabled={generating}
+              style={{ fontSize: 13, padding: "10px 20px", whiteSpace: "nowrap" }}>
+              {generating ? "⏳ جارٍ التحليل..." : "🔄 تحديث التوصيات"}
+            </button>
+          </div>
           {genResult && <span style={{ fontSize: 12, color: genResult.startsWith("❌") ? "#ef4444" : "#10b981" }}>{genResult}</span>}
         </div>
       </div>
