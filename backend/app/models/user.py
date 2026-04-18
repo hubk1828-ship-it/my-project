@@ -24,3 +24,6 @@ class User(Base):
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
     notification_preferences = relationship("UserNotificationPreference", back_populates="user", uselist=False, cascade="all, delete-orphan")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
+    paper_wallets = relationship("PaperWallet", back_populates="user", cascade="all, delete-orphan")
+    paper_trades = relationship("PaperTrade", back_populates="user", cascade="all, delete-orphan")
+    paper_bot_settings = relationship("PaperBotSettings", back_populates="user", uselist=False, cascade="all, delete-orphan")

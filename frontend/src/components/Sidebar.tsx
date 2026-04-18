@@ -11,6 +11,8 @@ interface NavItem {
 const userNav: NavItem[] = [
   { label: "التقارير المباشرة", icon: "📡", href: "/dashboard" },
   { label: "التحليل اليومي", icon: "📊", href: "/reports" },
+  { label: "التوصيات والإشارات", icon: "🎯", href: "/signals" },
+  { label: "التداول الوهمي", icon: "🧪", href: "/paper-trading" },
   { label: "محفظتي", icon: "💰", href: "/portfolio" },
   { label: "الإعدادات", icon: "⚙️", href: "/settings" },
 ];

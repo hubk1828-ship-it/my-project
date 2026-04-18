@@ -127,5 +127,31 @@ export const marketApi = {
   getSuggestedCoins: () => api.get("/api/market/suggested-coins"),
 };
 
+// ===== Paper Trading =====
+export const paperApi = {
+  // Wallet
+  getWallet: () => api.get("/api/paper/wallet"),
+  createWallet: (data: { initial_balance: number; label?: string }) =>
+    api.post("/api/paper/wallet", data),
+  deleteWallet: () => api.delete("/api/paper/wallet"),
+  resetWallet: (data: { initial_balance: number; label?: string }) =>
+    api.post("/api/paper/wallet/reset", data),
+
+  // Trades
+  executeTrade: (data: { symbol: string; side: string; amount_usdt: number }) =>
+    api.post("/api/paper/trade", data),
+  getTrades: (limit?: number) => api.get("/api/paper/trades", { params: { limit } }),
+
+  // Bot Settings
+  getBotSettings: () => api.get("/api/paper/bot-settings"),
+  updateBotSettings: (data: Record<string, any>) =>
+    api.patch("/api/paper/bot-settings", data),
+
+  // Signals
+  getSignals: (params?: { status?: string; timeframe_type?: string; symbol?: string }) =>
+    api.get("/api/paper/signals", { params }),
+  getActiveSignals: () => api.get("/api/paper/signals/active"),
+};
+
 // ===== WebSocket URL =====
 export const WS_BASE = API_BASE.replace("http", "ws");

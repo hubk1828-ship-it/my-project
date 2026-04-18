@@ -19,6 +19,7 @@ from app.models.wallet import Wallet, WalletBalance
 from app.models.analysis import BotAnalysis
 from app.models.trade import Trade, BotSettings, SupportedSymbol, TrustedNewsSource
 from app.models.notification import Notification, UserNotificationPreference, RefreshToken
+from app.models.paper_trading import PaperWallet, PaperHolding, PaperTrade, PaperBotSettings, TradeSignal
 
 # Import routers
 from app.api.auth import router as auth_router
@@ -28,6 +29,7 @@ from app.api.trades import router as trades_router
 from app.api.notifications import router as notifications_router
 from app.api.market import router as market_router
 from app.api.ws import router as ws_router
+from app.api.paper_trading import router as paper_router
 from app.api.deps import require_admin
 
 settings = get_settings()
@@ -136,6 +138,23 @@ async def run_analysis_job():
         await db.commit()
 
     logger.info("✅ Analysis cycle complete")
+
+
+async def run_paper_bot_job():
+    """Scheduled job: run paper trading bot for all enabled users."""
+    from app.services.paper_trader import run_paper_bot_cycle
+    logger.info("📄 Starting paper bot cycle...")
+    async with AsyncSessionLocal() as db:
+        await run_paper_bot_cycle(db)
+
+
+async def run_signals_job():
+    """Scheduled job: generate trade signals and update existing ones."""
+    from app.services.signal_generator import generate_signals, update_signal_statuses
+    logger.info("🎯 Starting signal generation...")
+    async with AsyncSessionLocal() as db:
+        await update_signal_statuses(db)
+        await generate_signals(db)
 
 
 async def seed_default_data():
@@ -261,8 +280,12 @@ async def lifespan(app: FastAPI):
 
     # Start scheduler
     scheduler.add_job(run_analysis_job, "interval", hours=1, id="analysis_job")
+    scheduler.add_job(run_paper_bot_job, "interval", hours=1, id="paper_bot_job", minutes=5)
+    scheduler.add_job(run_signals_job, "interval", hours=2, id="signals_job")
     scheduler.start()
     logger.info("⏰ Analysis scheduler started (every 1 hour)")
+    logger.info("⏰ Paper bot scheduler started (every 1 hour)")
+    logger.info("⏰ Signal generator started (every 2 hours)")
 
     yield
 
@@ -296,6 +319,7 @@ app.include_router(trades_router)
 app.include_router(notifications_router)
 app.include_router(market_router)
 app.include_router(ws_router)
+app.include_router(paper_router)
 
 
 @app.get("/api/health")
