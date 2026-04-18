@@ -275,6 +275,9 @@ export default function PaperTradingPage() {
             { label: "الحد الأقصى للصفقات يومياً", key: "max_trades_per_day", value: botSettings.max_trades_per_day },
             { label: "الحد الأقصى لكل صفقة (USDT)", key: "max_trade_amount", value: botSettings.max_trade_amount },
             { label: "نسبة المحفظة القصوى لكل صفقة (%)", key: "max_portfolio_percentage", value: botSettings.max_portfolio_percentage },
+            { label: "الحد الأقصى للخسارة اليومية (USDT)", key: "max_daily_loss", value: (botSettings as any).max_daily_loss ?? 200 },
+            { label: "الحد الأدنى لوقف الخسارة (USDT)", key: "min_loss_limit", value: (botSettings as any).min_loss_limit ?? 10 },
+            { label: "الحد الأعلى لوقف الخسارة (USDT)", key: "max_loss_limit", value: (botSettings as any).max_loss_limit ?? 500 },
           ].map(field => (
             <div key={field.key} style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>{field.label}</label>

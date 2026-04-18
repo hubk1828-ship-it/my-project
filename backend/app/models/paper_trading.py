@@ -74,6 +74,9 @@ class PaperBotSettings(Base):
     max_trades_per_day: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     max_trade_amount: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False, default=500)
     max_portfolio_percentage: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=20.00)
+    max_daily_loss: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False, default=200)
+    min_loss_limit: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False, default=10)
+    max_loss_limit: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False, default=500)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="paper_bot_settings")

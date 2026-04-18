@@ -66,6 +66,9 @@ class PaperBotSettingsResponse(BaseModel):
     max_trades_per_day: int
     max_trade_amount: float
     max_portfolio_percentage: float
+    max_daily_loss: float
+    min_loss_limit: float
+    max_loss_limit: float
     updated_at: Optional[datetime] = None
     class Config:
         from_attributes = True
@@ -75,6 +78,9 @@ class PaperBotSettingsUpdate(BaseModel):
     max_trades_per_day: Optional[int] = None
     max_trade_amount: Optional[float] = None
     max_portfolio_percentage: Optional[float] = None
+    max_daily_loss: Optional[float] = None
+    min_loss_limit: Optional[float] = None
+    max_loss_limit: Optional[float] = None
 
 
 # ===== Trade Signals =====

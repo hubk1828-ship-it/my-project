@@ -244,6 +244,12 @@ async def update_paper_bot_settings(
         settings.max_trade_amount = data.max_trade_amount
     if data.max_portfolio_percentage is not None:
         settings.max_portfolio_percentage = data.max_portfolio_percentage
+    if data.max_daily_loss is not None:
+        settings.max_daily_loss = data.max_daily_loss
+    if data.min_loss_limit is not None:
+        settings.min_loss_limit = data.min_loss_limit
+    if data.max_loss_limit is not None:
+        settings.max_loss_limit = data.max_loss_limit
 
     await db.commit()
     await db.refresh(settings)
