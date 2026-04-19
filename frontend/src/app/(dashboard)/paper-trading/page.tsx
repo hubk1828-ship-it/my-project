@@ -147,6 +147,27 @@ export default function PaperTradingPage() {
         ))}
       </div>
 
+      {/* Wallet Balance Control */}
+      <div className="card" style={{ padding: "16px 22px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>💰 تعديل رصيد المحفظة الوهمية</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>الرصيد الحالي: <strong>${w.wallet.current_balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <input className="form-input" type="number" value={createBalance} onChange={e => setCreateBalance(+e.target.value)} min={100} step={100}
+            style={{ width: 130, padding: "8px 12px", fontSize: 13 }} />
+          {[1000, 5000, 10000, 50000].map(v => (
+            <button key={v} className={`btn ${createBalance === v ? "btn-primary" : "btn-secondary"}`} style={{ fontSize: 11, padding: "6px 10px" }}
+              onClick={() => setCreateBalance(v)}>${v.toLocaleString()}</button>
+          ))}
+          <button className="btn btn-primary" style={{ fontSize: 12, padding: "8px 16px" }}
+            onClick={async () => {
+              if (!confirm(`هل تريد إعادة تعيين الرصيد إلى $${createBalance.toLocaleString()}؟`)) return;
+              try { await paperApi.resetWallet({ initial_balance: createBalance }); fetchData(); } catch(e: any) { alert(e.response?.data?.detail || "خطأ"); }
+            }}>✅ تطبيق الرصيد</button>
+        </div>
+      </div>
+
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 20, background: "var(--bg-secondary)", borderRadius: 10, padding: 4 }}>
         {(["wallet", "trades", "bot"] as const).map(tab => (
