@@ -39,38 +39,31 @@ def calculate_targets(price: float, side: str, support: float, resistance: float
 
 def estimate_signal_duration(timeframe: str, volatility_pct: float, volume_ratio: float) -> dict:
     """
-    Estimate signal duration based on timeframe, volatility, and volume.
-    NOT random — calculated from market conditions.
+    Signal duration = matches the selected timeframe exactly.
+    Short-term frames get exact timeframe duration (max 1 hour).
     """
-    # Base duration per timeframe (in hours)
-    base_hours = {
-        "1m": 0.5, "5m": 1, "15m": 3, "30m": 6,
-        "1h": 12, "2h": 18, "4h": 36,
-        "6h": 48, "8h": 60, "12h": 72,
-        "1d": 168, "3d": 336, "1w": 504, "1M": 720,
+    # Duration matches the timeframe exactly (in minutes)
+    tf_minutes = {
+        "1m": 1, "5m": 5, "15m": 15, "30m": 30,
+        "1h": 60, "2h": 120, "4h": 240,
+        "6h": 360, "8h": 480, "12h": 720,
+        "1d": 1440, "3d": 4320, "1w": 10080, "1M": 43200,
     }
-    base = base_hours.get(timeframe, 12)
+    minutes = tf_minutes.get(timeframe, 60)
+    short_tfs = ["1m", "5m", "15m", "30m", "1h"]
+    is_short = timeframe in short_tfs
 
-    # High volatility = shorter duration (price moves faster)
-    if volatility_pct > 5:
-        base *= 0.6
-    elif volatility_pct > 3:
-        base *= 0.8
-    elif volatility_pct < 1:
-        base *= 1.3
+    # Cap short-term to max 60 minutes
+    if is_short and minutes > 60:
+        minutes = 60
 
-    # High volume = faster target reach
-    if volume_ratio > 2:
-        base *= 0.7
-    elif volume_ratio > 1.5:
-        base *= 0.85
-
-    hours = max(1, int(base))
+    hours = max(0.02, minutes / 60)  # min ~1 minute
     return {
-        "duration_hours": hours,
-        "expires_at": datetime.utcnow() + timedelta(hours=hours),
-        "reason": f"مدة تقديرية {hours}h بناءً على الفريم {timeframe} والتقلب {volatility_pct:.1f}% والحجم {volume_ratio:.1f}x",
-        "is_short_term": timeframe in ["1m", "5m", "15m", "30m", "1h", "2h"],
+        "duration_hours": round(hours, 2),
+        "duration_minutes": minutes,
+        "expires_at": datetime.utcnow() + timedelta(minutes=minutes),
+        "reason": f"مدة {minutes} دقيقة (فريم {timeframe})",
+        "is_short_term": is_short,
     }
 
 
@@ -208,12 +201,15 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
 
             confidence = min(max(confidence, 30), 100)
 
-            # Duplicate check
+            # Skip if confidence below 85%
+            if confidence < 85:
+                continue
+
+            # Duplicate check — no active signal for same symbol in ANY direction
             existing = await db.execute(
                 select(TradeSignal).where(
                     TradeSignal.symbol == sym.symbol,
                     TradeSignal.status == "active",
-                    TradeSignal.signal_type == signal_type,
                 )
             )
             if existing.scalar_one_or_none():
@@ -223,16 +219,9 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
             atr_pct = max(1.0, min(atr_pct, 8.0))
             targets = calculate_targets(current_price, signal_type, support, resistance, atr_pct)
 
-            # Smart duration
+            # Duration matches the timeframe exactly
             duration = estimate_signal_duration(timeframe, atr_pct, volume_ratio)
-            short_tfs = ["1m", "5m", "15m", "30m", "1h", "2h"]
-            tf_type = "short_term" if timeframe in short_tfs else "long_term"
-
-            # Cap short-term to max 2 hours
-            if tf_type == "short_term" and duration["duration_hours"] > 2:
-                duration["duration_hours"] = 2
-                duration["expires_at"] = datetime.utcnow() + timedelta(hours=2)
-                duration["reason"] = f"مدة تقديرية 2h (قصيرة المدى — حد أقصى ساعتين)"
+            tf_type = "short_term" if duration["is_short_term"] else "long_term"
 
             reasons.append(f"⏱️ {duration['reason']}")
 
@@ -255,7 +244,7 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
                     "support": support,
                     "resistance": resistance,
                     "volume_ratio": volume_ratio,
-                    "duration_hours": duration["duration_hours"],
+                    "duration_minutes": duration["duration_minutes"],
                     "duration_reason": duration["reason"],
                 },
                 expires_at=duration["expires_at"],
@@ -264,7 +253,7 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
             generated.append({
                 "symbol": sym.symbol, "type": signal_type, "tf": tf_type,
                 "confidence": confidence, "timeframe": timeframe,
-                "duration_hours": duration["duration_hours"],
+                "duration_minutes": duration["duration_minutes"],
             })
 
         except Exception as e:

@@ -11,6 +11,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (!token) router.push("/login");
   }, [router]);
 
+  // Auto-logout after 5 minutes of inactivity
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    const INACTIVITY_MS = 5 * 60 * 1000; // 5 minutes
+
+    function resetTimer() {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        localStorage.removeItem("access_token");
+        router.push("/login");
+      }, INACTIVITY_MS);
+    }
+
+    const events = ["mousedown", "mousemove", "keydown", "scroll", "touchstart", "click"];
+    events.forEach(e => window.addEventListener(e, resetTimer));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timeout);
+      events.forEach(e => window.removeEventListener(e, resetTimer));
+    };
+  }, [router]);
+
   return (
     <>
       <Sidebar />

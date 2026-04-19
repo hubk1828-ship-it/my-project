@@ -91,12 +91,29 @@ function SignalsPageContent() {
 
   useEffect(() => { fetchSignals(); }, [fetchSignals]);
 
+  // Auto-refresh: remove expired signals every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSignals(prev => {
+        const now = new Date().getTime();
+        const filtered = prev.filter(s => {
+          if (s.status !== "active") return true;
+          if (!s.expires_at) return true;
+          return new Date(s.expires_at).getTime() > now;
+        });
+        if (filtered.length !== prev.length) fetchSignals(); // refresh from server
+        return prev;
+      });
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [fetchSignals]);
+
   async function handleGenerate() {
     setGenerating(true); setGenResult("");
     try {
       const { data } = await paperApi.generateSignals(timeframe);
       setGenResult(data.message);
-      fetchSignals();
+      fetchSignals(); // fetches all signals — server keeps active ones
     } catch (e: any) {
       setGenResult("❌ " + (e.response?.data?.detail || "فشل التوليد"));
     } finally { setGenerating(false); }
@@ -199,7 +216,7 @@ function SignalsPageContent() {
                 const entryToT1 = Math.abs(s.target_1 - s.entry_price) / s.entry_price * 100;
                 const rr = (entryToT1 / (entryToStop || 1)).toFixed(1);
                 const remaining = s.status === "active" ? timeLeft(s.expires_at) : "";
-                const duration = s.technical_data?.duration_hours;
+                const durationMin = s.technical_data?.duration_minutes;
 
                 return (
                   <div key={s.id} className="card" style={{ padding: 0, overflow: "hidden", border: s.status === "active" ? `1px solid ${isLong ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"}` : undefined }}>
@@ -212,7 +229,7 @@ function SignalsPageContent() {
                           <div style={{ fontSize: 16, fontWeight: 800 }}>{s.symbol}</div>
                           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                             {s.timeframe_type === "short_term" ? "⚡ قصير المدى" : "📊 طويل المدى"}
-                            {duration ? ` • ${duration}h` : ""}
+                            {durationMin ? ` • ${durationMin} دقيقة` : ""}
                           </div>
                         </div>
                       </div>
@@ -357,7 +374,7 @@ function SignalsPageContent() {
                           <td style={{ padding: "10px 12px", fontWeight: 700, color: s.pnl_pct > 0 ? "#10b981" : s.pnl_pct < 0 ? "#ef4444" : "var(--text-muted)" }}>
                             {s.pnl_pct > 0 ? "+" : ""}{s.pnl_pct}%
                           </td>
-                          <td style={{ padding: "10px 12px", fontSize: 10, color: "var(--text-muted)" }}>{s.created_at ? new Date(s.created_at).toLocaleDateString("ar-SA") : "—"}</td>
+                          <td style={{ padding: "10px 12px", fontSize: 10, color: "var(--text-muted)" }}>{s.created_at ? new Date(s.created_at).toLocaleString("ar-SA", { dateStyle: "short", timeStyle: "short" }) : "—"}</td>
                         </tr>
                       );
                     })}
