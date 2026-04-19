@@ -40,12 +40,13 @@ scheduler = AsyncIOScheduler()
 
 
 async def run_analysis_job():
-    """Scheduled job: run analysis for all active symbols every hour."""
-    from app.services.analyzer import analyze_symbol
+    """Scheduled job: run Confluence AI analysis for all active symbols."""
+    from app.services.confluence_analyzer import analyze_symbol_confluence
+    from app.services.analyzer import analyze_symbol  # Fallback
     from app.services.notifier import send_notification, format_opportunity_alert
     from app.services.binance_client import get_prices_batch
 
-    logger.info("🔍 Starting scheduled analysis...")
+    logger.info("🧠 Starting Confluence AI analysis...")
 
     async with AsyncSessionLocal() as db:
         # Get active symbols
@@ -56,12 +57,17 @@ async def run_analysis_job():
 
         for i, sym in enumerate(symbols):
             try:
-                # Delay between symbols to avoid Binance rate limits (klines only)
+                # Delay between symbols to avoid Binance rate limits
                 if i > 0:
                     import asyncio
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(3)
 
-                analysis_result = await analyze_symbol(sym.symbol, sym.base_asset)
+                # Try Confluence AI first, fallback to classic
+                try:
+                    analysis_result = await analyze_symbol_confluence(sym.symbol, sym.base_asset)
+                except Exception as e:
+                    logger.warning(f"Confluence failed for {sym.symbol}: {e}, using classic")
+                    analysis_result = await analyze_symbol(sym.symbol, sym.base_asset)
 
                 # Save to DB
                 analysis = BotAnalysis(**analysis_result)
