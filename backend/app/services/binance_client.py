@@ -20,17 +20,46 @@ _price_cache: Dict[str, tuple] = {}  # symbol -> (price, timestamp)
 CACHE_TTL = 30  # seconds
 
 
+# Ban tracking — stops ALL REST requests if IP is banned
+_ban_until: float = 0  # Unix timestamp when ban expires
+
+
 async def _request_with_retry(client: httpx.AsyncClient, method: str, url: str, **kwargs) -> httpx.Response:
-    """Make request with retry on 418/429 rate limit errors."""
+    """Make request — if IP is banned, skip entirely until ban expires."""
+    global _ban_until
+
+    # If we're currently banned, don't even try (avoids extending ban)
+    now = time.time()
+    if now < _ban_until:
+        # Return a fake 418 response without hitting Binance
+        return httpx.Response(418, text=f"IP banned until {_ban_until}")
+
     kwargs.setdefault("headers", {}).update(BINANCE_HEADERS)
-    for attempt in range(3):
+    resp = await getattr(client, method)(url, **kwargs)
+
+    if resp.status_code == 418:
+        # Parse ban expiry from response
+        try:
+            ban_info = resp.json()
+            ban_until_ms = ban_info.get("msg", "")
+            # Extract timestamp from: "...IP banned until 1776622427103..."
+            import re
+            match = re.search(r"until\s+(\d+)", ban_until_ms)
+            if match:
+                _ban_until = int(match.group(1)) / 1000
+            else:
+                _ban_until = now + 300  # Default 5 min ban
+        except Exception:
+            _ban_until = now + 300
+        import logging
+        logging.getLogger("binance").warning(f"🚫 IP banned until {_ban_until} — skipping REST calls")
+
+    elif resp.status_code == 429:
+        # Rate limited — wait and retry once
+        await asyncio.sleep(5)
         resp = await getattr(client, method)(url, **kwargs)
-        if resp.status_code in (418, 429):
-            wait = min(2 ** attempt * 5, 30)  # 5s, 10s, 20s
-            await asyncio.sleep(wait)
-            continue
-        return resp
-    return resp  # Return last response even if failed
+
+    return resp
 
 
 class BinanceClient:
