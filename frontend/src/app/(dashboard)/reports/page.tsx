@@ -82,23 +82,33 @@ export default function ReportsPage() {
 
   async function runFullAnalysis() {
     setRefreshing(true);
-    try {
-      // Clear old analyses first
-      await analysisApi.clearAll();
-      setAnalyses([]);
+    setAnalyses([]); // Clear UI immediately
 
+    try {
+      // Step 1: Clear all old analyses and wait
+      await analysisApi.clearAll();
+
+      // Step 2: Trigger new analysis
       await adminApi.runAnalysis();
-      // Poll for new data every 3s up to 45s
-      for (let i = 0; i < 15; i++) {
-        await new Promise(r => setTimeout(r, 3000));
+
+      // Step 3: Wait 5 seconds for first results, then poll every 3s
+      await new Promise(r => setTimeout(r, 5000));
+      for (let i = 0; i < 20; i++) {
         const { data } = await analysisApi.getHistory(undefined, 50);
         if (data.length > 0) {
           setAnalyses(data);
+          // Keep polling a few more times for remaining symbols
+          for (let j = 0; j < 5; j++) {
+            await new Promise(r => setTimeout(r, 3000));
+            const { data: updated } = await analysisApi.getHistory(undefined, 50);
+            setAnalyses(updated);
+          }
           break;
         }
+        await new Promise(r => setTimeout(r, 3000));
       }
     } catch {}
-    
+
     // Final sync
     try {
       const { data } = await analysisApi.getHistory(undefined, 50);
