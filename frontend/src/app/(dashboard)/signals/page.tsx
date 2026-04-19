@@ -296,8 +296,8 @@ function SignalsPageContent() {
                 { l: "ناجحة", v: performance.success, i: "✅", c: "#10b981" },
                 { l: "وقف خسارة", v: performance.stopped, i: "❌", c: "#ef4444" },
                 { l: "منتهية", v: performance.expired, i: "⏰", c: "#8e95ab" },
-                { l: "نسبة النجاح", v: `${performance.success_rate}%`, i: "🎯", c: performance.success_rate >= 50 ? "#10b981" : "#ef4444" },
-                { l: "متوسط الربح", v: `${performance.avg_pnl_pct >= 0 ? "+" : ""}${performance.avg_pnl_pct}%`, i: "📊", c: performance.avg_pnl_pct >= 0 ? "#10b981" : "#ef4444" },
+                { l: "نسبة النجاح", v: `${performance.success_rate ?? 0}%`, i: "🎯", c: (performance.success_rate ?? 0) >= 50 ? "#10b981" : "#ef4444" },
+                { l: "متوسط الربح", v: `${(performance.avg_pnl_pct ?? 0) >= 0 ? "+" : ""}${performance.avg_pnl_pct ?? 0}%`, i: "📊", c: (performance.avg_pnl_pct ?? 0) >= 0 ? "#10b981" : "#ef4444" },
               ].map((s, i) => (
                 <div key={i} className="card" style={{ padding: 16, textAlign: "center" }}>
                   <div style={{ fontSize: 24, marginBottom: 6 }}>{s.i}</div>
