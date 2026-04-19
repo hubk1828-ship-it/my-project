@@ -397,8 +397,10 @@ async def analyze_symbol_confluence(symbol: str, base_asset: str) -> Dict:
     result = await call_gemini(prompt)
 
     if not result:
-        logger.warning(f"Gemini failed for {symbol}, falling back")
-        return _fallback_result(symbol)
+        # Gemini failed — actually run classic analyzer
+        logger.warning(f"Gemini failed for {symbol}, using classic analyzer")
+        from app.services.analyzer import analyze_symbol
+        return await analyze_symbol(symbol, base_asset)
 
     # Step 3: Parse result
     score = result.get("confluence_score", 0)
