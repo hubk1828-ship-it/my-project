@@ -353,7 +353,7 @@ async def call_gemini(prompt: str) -> Optional[Dict]:
         return None
 
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash-lite")
         response = await asyncio.to_thread(
             model.generate_content,
             prompt,
