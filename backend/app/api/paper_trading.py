@@ -396,7 +396,7 @@ async def reset_signal_performance(
     from sqlalchemy import delete
     result = await db.execute(delete(TradeSignal))
     await db.commit()
-    return {\"message\": f\"✅ تم حذف {result.rowcount} توصية وإعادة تعيين الأداء\"}
+    return {"message": f"✅ تم حذف {result.rowcount} توصية وإعادة تعيين الأداء"}
 
 
 @router.get("/signals/archive")
