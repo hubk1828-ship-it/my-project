@@ -54,8 +54,13 @@ async def run_analysis_job():
         )
         symbols = result.scalars().all()
 
-        for sym in symbols:
+        for i, sym in enumerate(symbols):
             try:
+                # Delay between symbols to avoid Binance rate limits
+                if i > 0:
+                    import asyncio
+                    await asyncio.sleep(2)
+
                 analysis_result = await analyze_symbol(sym.symbol, sym.base_asset)
 
                 # Save to DB
