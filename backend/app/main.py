@@ -56,10 +56,10 @@ async def run_analysis_job():
 
         for i, sym in enumerate(symbols):
             try:
-                # Delay between symbols to avoid Binance rate limits
+                # Delay between symbols to avoid Binance rate limits (klines only)
                 if i > 0:
                     import asyncio
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(1)
 
                 analysis_result = await analyze_symbol(sym.symbol, sym.base_asset)
 
