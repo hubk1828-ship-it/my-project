@@ -83,6 +83,7 @@ export const analysisApi = {
     api.get("/api/analysis/history", { params: { symbol, limit } }),
   liveAnalysis: (symbol: string, timeframe: string) =>
     api.get("/api/analysis/live", { params: { symbol, timeframe } }),
+  clearAll: () => api.delete("/api/analysis/clear"),
 };
 
 // ===== Trades =====

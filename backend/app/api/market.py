@@ -131,9 +131,28 @@ async def add_symbol(
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    # Validate symbol format (only letters and digits, no underscores)
+    import re
+    if not re.match(r'^[A-Z0-9]+$', data.symbol):
+        raise HTTPException(400, f"رمز العملة غير صالح: {data.symbol}. يجب أن يحتوي على أحرف وأرقام فقط")
+
     existing = await db.execute(select(SupportedSymbol).where(SupportedSymbol.symbol == data.symbol))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="العملة موجودة بالفعل")
+
+    # Validate symbol exists on Binance
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{settings.BINANCE_BASE_URL}/api/v3/ticker/price",
+                params={"symbol": data.symbol}, timeout=5,
+            )
+            if resp.status_code != 200:
+                raise HTTPException(400, f"العملة {data.symbol} غير موجودة على Binance")
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # Allow add even if Binance check fails
 
     symbol = SupportedSymbol(
         symbol=data.symbol,

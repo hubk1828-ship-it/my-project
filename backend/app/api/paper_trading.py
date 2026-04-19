@@ -71,12 +71,14 @@ async def get_paper_wallet(
     holdings = h_result.scalars().all()
 
     # Get current prices for holdings value
+    holdings_value = 0
     if holdings:
-        symbols = [h.symbol for h in holdings]
-        prices = await get_prices_batch(symbols)
-        holdings_value = sum(float(h.quantity) * prices.get(h.symbol, 0) for h in holdings)
-    else:
-        holdings_value = 0
+        try:
+            symbols = [h.symbol for h in holdings]
+            prices = await get_prices_batch(symbols)
+            holdings_value = sum(float(h.quantity) * prices.get(h.symbol, 0) for h in holdings)
+        except Exception:
+            pass
 
     total_value = float(wallet.current_balance) + holdings_value
     total_pnl = total_value - float(wallet.initial_balance)

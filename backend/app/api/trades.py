@@ -161,3 +161,15 @@ async def update_limits(
 
     await db.flush()
     return settings
+
+
+@router.delete("/analysis/clear")
+async def clear_analyses(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear all old analysis data to start fresh."""
+    from sqlalchemy import delete
+    result = await db.execute(delete(BotAnalysis))
+    await db.commit()
+    return {"message": f"✅ تم حذف {result.rowcount} تحليل"}
