@@ -11,7 +11,7 @@ engine_kwargs = {
 }
 
 if settings.DATABASE_URL.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
+    connect_args = {"check_same_thread": False, "timeout": 30}
     engine_kwargs["connect_args"] = connect_args
 else:
     engine_kwargs["pool_size"] = 10
@@ -44,4 +44,8 @@ async def get_db():
 
 async def init_db():
     async with engine.begin() as conn:
+        # Enable WAL mode for better concurrent access
+        if settings.DATABASE_URL.startswith("sqlite"):
+            await conn.execute(__import__("sqlalchemy").text("PRAGMA journal_mode=WAL"))
+            await conn.execute(__import__("sqlalchemy").text("PRAGMA busy_timeout=30000"))
         await conn.run_sync(Base.metadata.create_all)
