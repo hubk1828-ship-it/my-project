@@ -353,7 +353,7 @@ async def call_gemini(prompt: str) -> Optional[Dict]:
         return None
 
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash")
         response = await asyncio.to_thread(
             model.generate_content,
             prompt,
@@ -391,7 +391,8 @@ async def analyze_symbol_confluence(symbol: str, base_asset: str) -> Dict:
         logger.warning(f"No price data for {symbol}, falling back")
         return _fallback_result(symbol)
 
-    # Step 2: Build prompt and call Gemini
+    # Step 2: Build prompt and call Gemini (with rate limit pause)
+    await asyncio.sleep(5)  # Respect Gemini rate limits
     prompt = build_analysis_prompt(symbol, data)
     result = await call_gemini(prompt)
 
