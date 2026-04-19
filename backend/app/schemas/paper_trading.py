@@ -69,6 +69,8 @@ class PaperBotSettingsResponse(BaseModel):
     max_daily_loss: float
     min_loss_limit: float
     max_loss_limit: float
+    min_confidence: float
+    signal_duration_multiplier: float
     updated_at: Optional[datetime] = None
     class Config:
         from_attributes = True
@@ -81,6 +83,8 @@ class PaperBotSettingsUpdate(BaseModel):
     max_daily_loss: Optional[float] = None
     min_loss_limit: Optional[float] = None
     max_loss_limit: Optional[float] = None
+    min_confidence: Optional[float] = None
+    signal_duration_multiplier: Optional[float] = None
 
 
 # ===== Trade Signals =====

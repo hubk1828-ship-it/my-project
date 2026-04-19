@@ -277,22 +277,28 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting CryptoAnalyzer...")
     await init_db()
 
-    # Migrate: add missing columns to paper_bot_settings
+    # Migrate: add missing columns to paper_bot_settings and bot_settings
     from sqlalchemy import text
     async with engine.begin() as conn:
-        result = await conn.execute(text("PRAGMA table_info(paper_bot_settings)"))
-        columns = [row[1] for row in result.fetchall()]
-        for col_name, col_type in [
-            ("max_daily_loss", "NUMERIC DEFAULT 200"),
-            ("min_loss_limit", "NUMERIC DEFAULT 10"),
-            ("max_loss_limit", "NUMERIC DEFAULT 500"),
-        ]:
-            if col_name not in columns:
-                try:
-                    await conn.execute(text(f"ALTER TABLE paper_bot_settings ADD COLUMN {col_name} {col_type}"))
-                    logger.info(f"✅ Added column {col_name} to paper_bot_settings")
-                except Exception:
-                    pass
+        for table_name in ["paper_bot_settings", "bot_settings"]:
+            try:
+                result = await conn.execute(text(f"PRAGMA table_info({table_name})"))
+                columns = [row[1] for row in result.fetchall()]
+            except Exception:
+                continue
+            for col_name, col_type in [
+                ("max_daily_loss", "NUMERIC DEFAULT 200"),
+                ("min_loss_limit", "NUMERIC DEFAULT 10"),
+                ("max_loss_limit", "NUMERIC DEFAULT 500"),
+                ("min_confidence", "NUMERIC DEFAULT 40"),
+                ("signal_duration_multiplier", "NUMERIC DEFAULT 1.0"),
+            ]:
+                if col_name not in columns:
+                    try:
+                        await conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"))
+                        logger.info(f"✅ Added column {col_name} to {table_name}")
+                    except Exception:
+                        pass
 
     await seed_default_data()
 

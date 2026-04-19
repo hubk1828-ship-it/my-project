@@ -18,6 +18,8 @@ class BotSettings(Base):
     max_daily_loss: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False, default=50)
     min_loss_limit: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False, default=10)
     max_loss_limit: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False, default=200)
+    min_confidence: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=40)
+    signal_duration_multiplier: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=1.0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships

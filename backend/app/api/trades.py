@@ -154,6 +154,10 @@ async def update_limits(
         settings.min_loss_limit = data.min_loss_limit
     if data.max_loss_limit is not None:
         settings.max_loss_limit = data.max_loss_limit
+    if data.min_confidence is not None:
+        settings.min_confidence = data.min_confidence
+    if data.signal_duration_multiplier is not None:
+        settings.signal_duration_multiplier = data.signal_duration_multiplier
 
     await db.flush()
     return settings

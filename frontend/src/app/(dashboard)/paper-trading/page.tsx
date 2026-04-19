@@ -278,13 +278,31 @@ export default function PaperTradingPage() {
             { label: "الحد الأقصى للخسارة اليومية (USDT)", key: "max_daily_loss", value: (botSettings as any).max_daily_loss ?? 200 },
             { label: "الحد الأدنى لوقف الخسارة (USDT)", key: "min_loss_limit", value: (botSettings as any).min_loss_limit ?? 10 },
             { label: "الحد الأعلى لوقف الخسارة (USDT)", key: "max_loss_limit", value: (botSettings as any).max_loss_limit ?? 500 },
+            { label: "الحد الأدنى لثقة التوصية (%)", key: "min_confidence", value: (botSettings as any).min_confidence ?? 40 },
+            { label: "مضاعف مدة التوصية (1.0 = عادي, 2.0 = ضعف)", key: "signal_duration_multiplier", value: (botSettings as any).signal_duration_multiplier ?? 1.0 },
           ].map(field => (
             <div key={field.key} style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>{field.label}</label>
-              <input className="form-input" type="number" defaultValue={field.value}
+              <input className="form-input" type="number" step={field.key === "signal_duration_multiplier" ? "0.1" : "1"} defaultValue={field.value}
                 onBlur={e => paperApi.updateBotSettings({ [field.key]: +e.target.value }).then(r => setBotSettings(r.data))} />
             </div>
           ))}
+
+          {/* Wallet Balance Control */}
+          <div style={{ padding: "16px 18px", borderRadius: 10, background: "rgba(59,130,246,0.04)", border: "1px solid rgba(59,130,246,0.1)", marginTop: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>💰 رصيد المحفظة الوهمية</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
+              الرصيد الحالي: <strong style={{ color: "var(--text-primary)" }}>${w.wallet.current_balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[1000, 5000, 10000, 50000, 100000].map(v => (
+                <button key={v} className="btn btn-secondary" style={{ fontSize: 11, padding: "5px 10px" }}
+                  onClick={() => { setCreateBalance(v); paperApi.resetWallet({ initial_balance: v }).then(() => fetchData()); }}>
+                  ${v.toLocaleString()}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
