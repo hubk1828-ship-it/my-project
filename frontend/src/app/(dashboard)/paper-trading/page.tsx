@@ -299,7 +299,7 @@ export default function PaperTradingPage() {
             { label: "الحد الأقصى للخسارة اليومية (USDT)", key: "max_daily_loss", value: (botSettings as any).max_daily_loss ?? 200 },
             { label: "الحد الأدنى لوقف الخسارة (USDT)", key: "min_loss_limit", value: (botSettings as any).min_loss_limit ?? 10 },
             { label: "الحد الأعلى لوقف الخسارة (USDT)", key: "max_loss_limit", value: (botSettings as any).max_loss_limit ?? 500 },
-            { label: "الحد الأدنى لثقة التوصية (%)", key: "min_confidence", value: (botSettings as any).min_confidence ?? 40 },
+            { label: "الحد الأدنى لثقة التوصية (%)", key: "min_confidence", value: (botSettings as any).min_confidence ?? 85 },
             { label: "مضاعف مدة التوصية (1.0 = عادي, 2.0 = ضعف)", key: "signal_duration_multiplier", value: (botSettings as any).signal_duration_multiplier ?? 1.0 },
           ].map(field => (
             <div key={field.key} style={{ marginBottom: 14 }}>

@@ -128,8 +128,10 @@ async def execute_paper_trade(
 
 
 async def run_paper_bot_cycle(db: AsyncSession):
-    """Run paper bot for all users who have it enabled — uses same analysis as real bot."""
+    """Run paper bot for all enabled users — auto-trade based on active signals."""
+    from app.models.paper_trading import TradeSignal
     from app.models.trade import SupportedSymbol
+    from app.services.signal_generator import generate_signals_live, update_signal_statuses
 
     result = await db.execute(
         select(PaperBotSettings).where(PaperBotSettings.is_enabled == True)
@@ -139,11 +141,8 @@ async def run_paper_bot_cycle(db: AsyncSession):
     if not enabled_settings:
         return
 
-    # Get active symbols
-    sym_result = await db.execute(
-        select(SupportedSymbol).where(SupportedSymbol.is_active == True)
-    )
-    symbols = sym_result.scalars().all()
+    # First: update signal statuses (close expired/hit targets)
+    await update_signal_statuses(db)
 
     for settings in enabled_settings:
         # Get user's paper wallet
@@ -170,17 +169,60 @@ async def run_paper_bot_cycle(db: AsyncSession):
         if today_trades >= settings.max_trades_per_day:
             continue
 
-        for sym in symbols:
-            # Get latest analysis
-            a_result = await db.execute(
-                select(BotAnalysis)
-                .where(BotAnalysis.symbol == sym.symbol)
-                .order_by(BotAnalysis.created_at.desc())
-                .limit(1)
-            )
-            analysis = a_result.scalar_one_or_none()
-            if not analysis or analysis.decision == "no_opportunity":
+        # Auto-sell holdings that hit target or stop — based on closed signals
+        h_result = await db.execute(
+            select(PaperHolding).where(PaperHolding.wallet_id == wallet.id)
+        )
+        holdings = h_result.scalars().all()
+        for holding in holdings:
+            if float(holding.quantity) <= 0:
                 continue
+            # Check if signal for this symbol was closed (hit_target/stopped/expired)
+            sig_result = await db.execute(
+                select(TradeSignal).where(
+                    TradeSignal.symbol == holding.symbol,
+                    TradeSignal.status.in_(["hit_target", "stopped", "expired"]),
+                ).order_by(TradeSignal.closed_at.desc()).limit(1)
+            )
+            closed_signal = sig_result.scalar_one_or_none()
+            if closed_signal and closed_signal.closed_at:
+                # Check if closed recently (within last 10 minutes)
+                closed_time = closed_signal.closed_at
+                if hasattr(closed_time, 'tzinfo') and closed_time.tzinfo is None:
+                    closed_time = closed_time.replace(tzinfo=timezone.utc)
+                if (datetime.now(timezone.utc) - closed_time).total_seconds() < 600:
+                    sell_amount = float(holding.quantity) * float(
+                        (await get_prices_batch([holding.symbol])).get(holding.symbol, 0)
+                    )
+                    if sell_amount > 0:
+                        await execute_paper_trade(
+                            user_id=settings.user_id, wallet=wallet,
+                            symbol=holding.symbol, side="sell",
+                            amount_usdt=sell_amount, db=db,
+                            executed_by="paper_bot",
+                        )
+                        logger.info(f"🤖 Auto-sell {holding.symbol} ({closed_signal.status})")
+
+        # Auto-buy from active signals
+        sig_result = await db.execute(
+            select(TradeSignal).where(
+                TradeSignal.status == "active",
+                TradeSignal.signal_type == "long",
+                TradeSignal.confidence >= float(settings.min_confidence or 85),
+            )
+        )
+        active_signals = sig_result.scalars().all()
+
+        for signal in active_signals:
+            # Check if already holding this symbol
+            existing = await db.execute(
+                select(PaperHolding).where(
+                    PaperHolding.wallet_id == wallet.id,
+                    PaperHolding.symbol == signal.symbol,
+                )
+            )
+            if existing.scalar_one_or_none():
+                continue  # Already holding
 
             trade_amount = min(
                 float(settings.max_trade_amount),
@@ -190,15 +232,12 @@ async def run_paper_bot_cycle(db: AsyncSession):
                 continue
 
             await execute_paper_trade(
-                user_id=settings.user_id,
-                wallet=wallet,
-                symbol=sym.symbol,
-                side=analysis.decision,
-                amount_usdt=trade_amount,
-                db=db,
-                analysis_id=analysis.id,
+                user_id=settings.user_id, wallet=wallet,
+                symbol=signal.symbol, side="buy",
+                amount_usdt=trade_amount, db=db,
                 executed_by="paper_bot",
             )
+            logger.info(f"🤖 Auto-buy {signal.symbol} (confidence: {signal.confidence}%)")
 
     await db.commit()
     logger.info("✅ Paper bot cycle complete")
