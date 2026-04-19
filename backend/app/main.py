@@ -322,6 +322,18 @@ async def lifespan(app: FastAPI):
 
     await seed_default_data()
 
+    # Start Binance WebSocket for live prices (avoids REST API rate limits)
+    from app.services.binance_client import start_price_stream
+    async with AsyncSessionLocal() as db:
+        sym_result = await db.execute(
+            select(SupportedSymbol).where(SupportedSymbol.is_active == True)
+        )
+        active_symbols = [s.symbol for s in sym_result.scalars().all()]
+    if active_symbols:
+        import asyncio as aio
+        aio.create_task(start_price_stream(active_symbols))
+        logger.info(f"🔌 WebSocket price stream started for {len(active_symbols)} symbols")
+
     # Start scheduler
     scheduler.add_job(run_analysis_job, "interval", hours=1, id="analysis_job")
     scheduler.add_job(run_paper_bot_job, "interval", hours=1, id="paper_bot_job", minutes=5)
@@ -334,6 +346,8 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    from app.services.binance_client import stop_price_stream
+    await stop_price_stream()
     scheduler.shutdown()
     logger.info("👋 CryptoAnalyzer stopped")
 

@@ -145,35 +145,89 @@ class BinanceClient:
 
 
 async def get_prices_batch(symbols: List[str]) -> Dict[str, float]:
-    """Get prices for multiple symbols (cached)."""
+    """Get prices — uses WebSocket cache first, REST as fallback."""
     now = time.time()
     results = {}
-    uncached = []
+    missing = []
 
     for sym in symbols:
         if sym in _price_cache:
             price, ts = _price_cache[sym]
-            if now - ts < CACHE_TTL:
+            if now - ts < 120:  # WS prices are live, allow 2min cache
                 results[sym] = price
                 continue
-        uncached.append(sym)
+        missing.append(sym)
 
-    if uncached or not results:
-        async with httpx.AsyncClient() as client:
-            resp = await _request_with_retry(
-                client, "get", f"{settings.BINANCE_BASE_URL}/api/v3/ticker/price",
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                for item in data:
-                    s = item["symbol"]
-                    p = float(item["price"])
-                    _price_cache[s] = (p, now)
-                    if s in symbols:
-                        results[s] = p
+    # Only call REST if we have missing symbols and WS isn't providing them
+    if missing:
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await _request_with_retry(
+                    client, "get", f"{settings.BINANCE_BASE_URL}/api/v3/ticker/price",
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for item in data:
+                        s = item["symbol"]
+                        p = float(item["price"])
+                        _price_cache[s] = (p, now)
+                        if s in symbols:
+                            results[s] = p
+        except Exception:
+            pass  # Use whatever we have from cache
 
     return results
+
+
+# ===== Binance WebSocket Price Stream =====
+
+import websockets
+import json
+import logging
+
+_ws_logger = logging.getLogger("binance_ws")
+_ws_running = False
+
+
+async def start_price_stream(symbols: List[str]):
+    """Connect to Binance WebSocket and stream live prices into cache."""
+    global _ws_running
+    if _ws_running:
+        return
+    _ws_running = True
+
+    # Build stream names: btcusdt@miniTicker, ethusdt@miniTicker, etc.
+    streams = [f"{s.lower()}@miniTicker" for s in symbols]
+    url = f"wss://stream.binance.com:9443/stream?streams={'/'.join(streams)}"
+
+    _ws_logger.info(f"🔌 Connecting to Binance WebSocket ({len(symbols)} symbols)...")
+
+    while _ws_running:
+        try:
+            async with websockets.connect(url, ping_interval=30, ping_timeout=10) as ws:
+                _ws_logger.info("✅ Binance WebSocket connected — live prices active")
+                async for msg in ws:
+                    try:
+                        data = json.loads(msg)
+                        payload = data.get("data", {})
+                        symbol = payload.get("s")
+                        price = payload.get("c")  # Close price
+                        if symbol and price:
+                            _price_cache[symbol] = (float(price), time.time())
+                    except Exception:
+                        pass
+        except Exception as e:
+            _ws_logger.warning(f"⚠️ WebSocket disconnected: {e}. Reconnecting in 5s...")
+            await asyncio.sleep(5)
+
+    _ws_logger.info("🔌 WebSocket stream stopped")
+
+
+async def stop_price_stream():
+    """Stop the WebSocket price stream."""
+    global _ws_running
+    _ws_running = False
 
 
 async def verify_api_key(api_key: str, api_secret: str) -> bool:
