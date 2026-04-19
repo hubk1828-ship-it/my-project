@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import httpx
 from app.core.config import get_settings
-from app.services.binance_client import get_prices_batch
+from app.services.binance_client import get_prices_batch, _request_with_retry, BINANCE_HEADERS
 from app.services.smc_engine import SMCEngine
 
 settings = get_settings()
@@ -30,8 +30,8 @@ async def check_momentum(symbol: str) -> Dict:
     try:
         async with httpx.AsyncClient() as client:
             # Get 7 days of 1h klines (168 candles)
-            resp = await client.get(
-                f"{settings.BINANCE_BASE_URL}/api/v3/klines",
+            resp = await _request_with_retry(
+                client, "get", f"{settings.BINANCE_BASE_URL}/api/v3/klines",
                 params={"symbol": symbol, "interval": "1h", "limit": 168},
                 timeout=15,
             )
@@ -79,8 +79,8 @@ async def check_price_confirms_news(
         end_time = int((news_timestamp + timedelta(hours=2)).timestamp() * 1000)
 
         async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{settings.BINANCE_BASE_URL}/api/v3/klines",
+            resp = await _request_with_retry(
+                client, "get", f"{settings.BINANCE_BASE_URL}/api/v3/klines",
                 params={
                     "symbol": symbol,
                     "interval": "15m",
@@ -125,8 +125,8 @@ async def analyze_chart(symbol: str, timeframe: str = "1h") -> Dict:
     """
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{settings.BINANCE_BASE_URL}/api/v3/klines",
+            resp = await _request_with_retry(
+                client, "get", f"{settings.BINANCE_BASE_URL}/api/v3/klines",
                 params={"symbol": symbol, "interval": timeframe, "limit": 200},
                 timeout=15,
             )
