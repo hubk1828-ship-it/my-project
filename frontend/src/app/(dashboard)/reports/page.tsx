@@ -82,21 +82,24 @@ export default function ReportsPage() {
 
   async function runFullAnalysis() {
     setRefreshing(true);
-    const topId = analyses.length > 0 ? analyses[0].id : null;
     try {
+      // Clear old analyses first
+      await analysisApi.clearAll();
+      setAnalyses([]);
+
       await adminApi.runAnalysis();
       // Poll for new data every 3s up to 45s
       for (let i = 0; i < 15; i++) {
         await new Promise(r => setTimeout(r, 3000));
         const { data } = await analysisApi.getHistory(undefined, 50);
-        if (data.length > 0 && data[0].id !== topId) {
+        if (data.length > 0) {
           setAnalyses(data);
           break;
         }
       }
     } catch {}
     
-    // Final sync just to be sure
+    // Final sync
     try {
       const { data } = await analysisApi.getHistory(undefined, 50);
       setAnalyses(data);
