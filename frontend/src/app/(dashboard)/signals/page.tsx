@@ -61,6 +61,9 @@ function SignalsPageContent() {
   const [performance, setPerformance] = useState<Performance | null>(null);
   const [botAnalysis, setBotAnalysis] = useState<BotAnalysis | null>(null);
   const [perfLoading, setPerfLoading] = useState(false);
+  const [archivedSignals, setArchivedSignals] = useState<any[]>([]);
+  const [archiveFilter, setArchiveFilter] = useState<string | null>(null);
+  const [archiveLoading, setArchiveLoading] = useState(false);
 
   const timeframes = [
     { value: "1m", label: "1 دقيقة" }, { value: "5m", label: "5 دقائق" },
@@ -292,20 +295,77 @@ function SignalsPageContent() {
           <div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 24 }}>
               {[
-                { l: "إجمالي التوصيات", v: performance.total, i: "📋", c: undefined },
-                { l: "ناجحة", v: performance.success, i: "✅", c: "#10b981" },
-                { l: "وقف خسارة", v: performance.stopped, i: "❌", c: "#ef4444" },
-                { l: "منتهية", v: performance.expired, i: "⏰", c: "#8e95ab" },
-                { l: "نسبة النجاح", v: `${performance.success_rate ?? 0}%`, i: "🎯", c: (performance.success_rate ?? 0) >= 50 ? "#10b981" : "#ef4444" },
-                { l: "متوسط الربح", v: `${(performance.avg_pnl_pct ?? 0) >= 0 ? "+" : ""}${performance.avg_pnl_pct ?? 0}%`, i: "📊", c: (performance.avg_pnl_pct ?? 0) >= 0 ? "#10b981" : "#ef4444" },
+                { l: "إجمالي التوصيات", v: performance.total, i: "📋", c: undefined, f: undefined },
+                { l: "ناجحة", v: performance.success, i: "✅", c: "#10b981", f: "hit_target" },
+                { l: "وقف خسارة", v: performance.stopped, i: "❌", c: "#ef4444", f: "stopped" },
+                { l: "منتهية", v: performance.expired, i: "⏰", c: "#8e95ab", f: "expired" },
+                { l: "نسبة النجاح", v: `${performance.success_rate ?? 0}%`, i: "🎯", c: (performance.success_rate ?? 0) >= 50 ? "#10b981" : "#ef4444", f: null },
+                { l: "متوسط الربح", v: `${(performance.avg_pnl_pct ?? 0) >= 0 ? "+" : ""}${performance.avg_pnl_pct ?? 0}%`, i: "📊", c: (performance.avg_pnl_pct ?? 0) >= 0 ? "#10b981" : "#ef4444", f: null },
               ].map((s, i) => (
-                <div key={i} className="card" style={{ padding: 16, textAlign: "center" }}>
+                <div key={i} className="card" style={{ padding: 16, textAlign: "center", cursor: s.f !== null ? "pointer" : "default", transition: "transform 0.15s", border: archiveFilter === s.f ? "2px solid var(--accent-blue)" : undefined }}
+                  onClick={async () => {
+                    if (s.f === null) return;
+                    setArchiveFilter(s.f || undefined);
+                    setArchiveLoading(true);
+                    try {
+                      const { data } = await paperApi.getArchivedSignals(s.f || undefined);
+                      setArchivedSignals(data);
+                    } catch {} finally { setArchiveLoading(false); }
+                  }}
+                  onMouseEnter={e => { if (s.f !== null) (e.currentTarget as HTMLElement).style.transform = "scale(1.03)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "scale(1)"; }}>
                   <div style={{ fontSize: 24, marginBottom: 6 }}>{s.i}</div>
                   <div style={{ fontSize: 20, fontWeight: 800, color: s.c || "var(--text-primary)" }}>{s.v}</div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>{s.l}</div>
+                  {s.f !== null && <div style={{ fontSize: 9, color: "var(--accent-blue)", marginTop: 4 }}>اضغط للتفاصيل</div>}
                 </div>
               ))}
             </div>
+
+            {/* Archived signals table */}
+            {archiveLoading ? <div style={{ textAlign: "center", padding: 40 }}><div className="spinner" /></div> :
+            archivedSignals.length > 0 && (
+              <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 20 }}>
+                <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700 }}>📂 أرشيف التوصيات {archiveFilter === "hit_target" ? "الناجحة" : archiveFilter === "stopped" ? "الخاسرة" : archiveFilter === "expired" ? "المنتهية" : ""} ({archivedSignals.length})</h3>
+                  <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 12px" }} onClick={() => { setArchivedSignals([]); setArchiveFilter(null); }}>✕ إغلاق</button>
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: "var(--bg-secondary)", borderBottom: "1px solid var(--border)" }}>
+                      {["العملة", "النوع", "الدخول", "الهدف 1", "الوقف", "النتيجة", "PnL", "التاريخ"].map(h => (
+                        <th key={h} style={{ padding: "10px 12px", textAlign: "right", fontWeight: 600, color: "var(--text-secondary)", fontSize: 11 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {archivedSignals.map((s: any) => {
+                      const isLong = s.signal_type === "long";
+                      const st = statusLabels[s.status] || statusLabels.active;
+                      return (
+                        <tr key={s.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                          <td style={{ padding: "10px 12px", fontWeight: 700 }}>{s.symbol}</td>
+                          <td style={{ padding: "10px 12px" }}>
+                            <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: isLong ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)", color: isLong ? "#10b981" : "#ef4444" }}>
+                              {isLong ? "LONG" : "SHORT"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "10px 12px" }}>${s.entry_price.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                          <td style={{ padding: "10px 12px" }}>${s.target_1.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                          <td style={{ padding: "10px 12px", color: "#ef4444" }}>${s.stop_loss.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                          <td style={{ padding: "10px 12px" }}><span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: st.bg, color: st.color }}>{st.label}</span></td>
+                          <td style={{ padding: "10px 12px", fontWeight: 700, color: s.pnl_pct > 0 ? "#10b981" : s.pnl_pct < 0 ? "#ef4444" : "var(--text-muted)" }}>
+                            {s.pnl_pct > 0 ? "+" : ""}{s.pnl_pct}%
+                          </td>
+                          <td style={{ padding: "10px 12px", fontSize: 10, color: "var(--text-muted)" }}>{s.created_at ? new Date(s.created_at).toLocaleDateString("ar-SA") : "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             {performance.total === 0 && (
               <div className="card" style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>لا توجد توصيات مغلقة بعد لحساب الأداء</div>
             )}
@@ -317,6 +377,7 @@ function SignalsPageContent() {
                     const { data } = await paperApi.resetSignals();
                     setGenResult(data.message);
                     setPerformance(null);
+                    setArchivedSignals([]);
                     fetchSignals();
                     loadPerformance();
                   } catch { setGenResult("❌ فشل إعادة التعيين"); }

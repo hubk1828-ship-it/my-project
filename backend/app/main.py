@@ -149,12 +149,27 @@ async def run_paper_bot_job():
 
 
 async def run_signals_job():
-    """Scheduled job: generate trade signals and update existing ones."""
+    """Scheduled job: generate trade signals, update statuses, and clean old analyses."""
     from app.services.signal_generator import generate_signals, update_signal_statuses
+    from sqlalchemy import delete, text
+    from datetime import datetime, timezone, timedelta
+
     logger.info("🎯 Starting signal generation...")
     async with AsyncSessionLocal() as db:
         await update_signal_statuses(db)
         await generate_signals(db)
+
+        # Auto-cleanup: remove analyses older than 24 hours
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+            result = await db.execute(
+                delete(BotAnalysis).where(BotAnalysis.created_at < cutoff)
+            )
+            if result.rowcount > 0:
+                await db.commit()
+                logger.info(f"🧹 Cleaned {result.rowcount} old analyses (>24h)")
+        except Exception as e:
+            logger.error(f"Cleanup failed: {e}")
 
 
 async def seed_default_data():

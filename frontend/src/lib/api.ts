@@ -160,6 +160,8 @@ export const paperApi = {
     api.get(`/api/paper/signals/history/${symbol}`),
   getBotAnalysis: () => api.get("/api/paper/signals/bot-analysis"),
   resetSignals: () => api.delete("/api/paper/signals/reset"),
+  getArchivedSignals: (status?: string) =>
+    api.get("/api/paper/signals/archive", { params: { status_filter: status } }),
 };
 
 // ===== WebSocket URL =====

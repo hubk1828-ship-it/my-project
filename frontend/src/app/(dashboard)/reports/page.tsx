@@ -122,14 +122,6 @@ export default function ReportsPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn" style={{ padding: "10px 18px", fontSize: 13, background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}
-            onClick={async () => {
-              if (!confirm("هل تريد حذف جميع التحليلات القديمة؟")) return;
-              try {
-                await analysisApi.clearAll();
-                setAnalyses([]);
-              } catch {}
-            }}>🗑️ حذف القديم</button>
           <button className="btn btn-primary" onClick={runFullAnalysis} disabled={refreshing}
             style={{ padding: "10px 22px", fontSize: 14, fontWeight: 700 }}>
             {refreshing ? "⏳ جاري التحديث..." : "🔄 تحديث الآن"}

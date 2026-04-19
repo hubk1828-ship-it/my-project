@@ -13,13 +13,13 @@ const userNav: NavItem[] = [
   { label: "التحليل اليومي", icon: "📊", href: "/reports" },
   { label: "التوصيات والإشارات", icon: "🎯", href: "/signals" },
   { label: "التداول الوهمي", icon: "🧪", href: "/paper-trading" },
+  { label: "إدارة العملات", icon: "🪙", href: "/admin/symbols" },
   { label: "محفظتي", icon: "💰", href: "/portfolio" },
   { label: "الإعدادات", icon: "⚙️", href: "/settings" },
 ];
 
 const adminNav: NavItem[] = [
   { label: "إدارة المستخدمين", icon: "👥", href: "/admin/users" },
-  { label: "إدارة العملات", icon: "🪙", href: "/admin/symbols" },
   { label: "مصادر الأخبار", icon: "📰", href: "/admin/news-sources" },
   { label: "إعدادات البوت", icon: "🤖", href: "/admin/bot-settings" },
 ];

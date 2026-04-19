@@ -396,4 +396,57 @@ async def reset_signal_performance(
     from sqlalchemy import delete
     result = await db.execute(delete(TradeSignal))
     await db.commit()
-    return {"message": f"✅ تم حذف {result.rowcount} توصية وإعادة تعيين الأداء"}
+    return {\"message\": f\"✅ تم حذف {result.rowcount} توصية وإعادة تعيين الأداء\"}
+
+
+@router.get("/signals/archive")
+async def get_archived_signals(
+    status_filter: Optional[str] = Query(None, description="hit_target|stopped|expired"),
+    limit: int = Query(default=100, le=500),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get archived (closed) signals with full details for performance review."""
+    query = select(TradeSignal).where(
+        TradeSignal.status != "active"
+    ).order_by(desc(TradeSignal.closed_at))
+
+    if status_filter:
+        query = query.where(TradeSignal.status == status_filter)
+
+    result = await db.execute(query.limit(limit))
+    signals = result.scalars().all()
+
+    # Get current prices for comparison
+    symbols_list = list(set(s.symbol for s in signals))
+    try:
+        current_prices = await get_prices_batch(symbols_list) if symbols_list else {}
+    except Exception:
+        current_prices = {}
+
+    archive = []
+    for s in signals:
+        entry = float(s.entry_price)
+        current = current_prices.get(s.symbol, 0)
+        pnl_pct = 0
+        if s.status == "hit_target" and s.hit_target_level:
+            target_val = float(getattr(s, f"target_{s.hit_target_level}", entry))
+            pnl_pct = abs(target_val - entry) / entry * 100
+        elif s.status == "stopped":
+            pnl_pct = -abs(float(s.stop_loss) - entry) / entry * 100
+
+        archive.append({
+            "id": s.id, "symbol": s.symbol, "signal_type": s.signal_type,
+            "timeframe_type": s.timeframe_type, "entry_price": entry,
+            "target_1": float(s.target_1),
+            "target_2": float(s.target_2) if s.target_2 else None,
+            "target_3": float(s.target_3) if s.target_3 else None,
+            "stop_loss": float(s.stop_loss), "confidence": float(s.confidence),
+            "status": s.status, "hit_target_level": s.hit_target_level,
+            "pnl_pct": round(pnl_pct, 2), "reasoning": s.reasoning,
+            "current_price": current, "technical_data": s.technical_data,
+            "created_at": str(s.created_at) if s.created_at else None,
+            "expires_at": str(s.expires_at) if s.expires_at else None,
+            "closed_at": str(s.closed_at) if s.closed_at else None,
+        })
+    return archive

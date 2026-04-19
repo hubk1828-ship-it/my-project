@@ -70,6 +70,7 @@ def estimate_signal_duration(timeframe: str, volatility_pct: float, volume_ratio
         "duration_hours": hours,
         "expires_at": datetime.utcnow() + timedelta(hours=hours),
         "reason": f"مدة تقديرية {hours}h بناءً على الفريم {timeframe} والتقلب {volatility_pct:.1f}% والحجم {volume_ratio:.1f}x",
+        "is_short_term": timeframe in ["1m", "5m", "15m", "30m", "1h", "2h"],
     }
 
 
@@ -226,6 +227,12 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
             duration = estimate_signal_duration(timeframe, atr_pct, volume_ratio)
             short_tfs = ["1m", "5m", "15m", "30m", "1h", "2h"]
             tf_type = "short_term" if timeframe in short_tfs else "long_term"
+
+            # Cap short-term to max 2 hours
+            if tf_type == "short_term" and duration["duration_hours"] > 2:
+                duration["duration_hours"] = 2
+                duration["expires_at"] = datetime.utcnow() + timedelta(hours=2)
+                duration["reason"] = f"مدة تقديرية 2h (قصيرة المدى — حد أقصى ساعتين)"
 
             reasons.append(f"⏱️ {duration['reason']}")
 
