@@ -158,6 +158,7 @@ export const paperApi = {
   getSignalHistory: (symbol: string) =>
     api.get(`/api/paper/signals/history/${symbol}`),
   getBotAnalysis: () => api.get("/api/paper/signals/bot-analysis"),
+  resetSignals: () => api.delete("/api/paper/signals/reset"),
 };
 
 // ===== WebSocket URL =====

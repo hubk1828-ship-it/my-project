@@ -309,6 +309,21 @@ function SignalsPageContent() {
             {performance.total === 0 && (
               <div className="card" style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>لا توجد توصيات مغلقة بعد لحساب الأداء</div>
             )}
+            <div style={{ marginTop: 16, textAlign: "center" }}>
+              <button className="btn" style={{ background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)", fontSize: 13, padding: "10px 24px" }}
+                onClick={async () => {
+                  if (!confirm("هل تريد حذف جميع التوصيات وإعادة تعيين الأداء؟")) return;
+                  try {
+                    const { data } = await paperApi.resetSignals();
+                    setGenResult(data.message);
+                    setPerformance(null);
+                    fetchSignals();
+                    loadPerformance();
+                  } catch { setGenResult("❌ فشل إعادة التعيين"); }
+                }}>
+                🔄 إعادة تعيين الأداء
+              </button>
+            </div>
           </div>
         ) : <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>لا توجد بيانات</div>
       )}

@@ -383,3 +383,15 @@ async def get_bot_loss_analysis(
     """Analyze bot decisions and identify issues when losses increase."""
     from app.services.signal_generator import analyze_bot_losses
     return await analyze_bot_losses(db)
+
+
+@router.delete("/signals/reset")
+async def reset_signal_performance(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete all signals and reset performance data."""
+    from sqlalchemy import delete
+    result = await db.execute(delete(TradeSignal))
+    await db.commit()
+    return {"message": f"✅ تم حذف {result.rowcount} توصية وإعادة تعيين الأداء"}
