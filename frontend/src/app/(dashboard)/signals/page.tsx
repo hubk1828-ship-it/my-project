@@ -305,10 +305,10 @@ function SignalsPageContent() {
                 <div key={i} className="card" style={{ padding: 16, textAlign: "center", cursor: s.f !== null ? "pointer" : "default", transition: "transform 0.15s", border: archiveFilter === s.f ? "2px solid var(--accent-blue)" : undefined }}
                   onClick={async () => {
                     if (s.f === null) return;
-                    setArchiveFilter(s.f || undefined);
+                    setArchiveFilter(s.f ?? null);
                     setArchiveLoading(true);
                     try {
-                      const { data } = await paperApi.getArchivedSignals(s.f || undefined);
+                      const { data } = await paperApi.getArchivedSignals(s.f ?? undefined);
                       setArchivedSignals(data);
                     } catch {} finally { setArchiveLoading(false); }
                   }}
