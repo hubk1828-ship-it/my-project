@@ -21,7 +21,7 @@ from app.services.binance_client import (
 settings = get_settings()
 logger = logging.getLogger("confluence")
 
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
 
 
 # ===== Data Collection =====
