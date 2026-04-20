@@ -68,7 +68,7 @@ def estimate_signal_duration(timeframe: str, volatility_pct: float, volume_ratio
 
 
 async def generate_signals(db: AsyncSession) -> List[Dict]:
-    """Generate signals from existing analysis results."""
+    """Generate signals from existing analysis results (Gemini-based)."""
     result = await db.execute(
         select(SupportedSymbol).where(SupportedSymbol.is_active == True)
     )
@@ -87,22 +87,23 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
             if not analysis or analysis.decision == "no_opportunity":
                 continue
 
+            # Skip Gemini failures
             indicators = analysis.technical_indicators or {}
+            if indicators.get("gemini_status") == "failed":
+                continue
+
             current_price = indicators.get("current_price", 0)
             if current_price <= 0:
                 continue
 
-            support = indicators.get("support", current_price * 0.97)
-            resistance = indicators.get("resistance", current_price * 1.03)
-            confidence = float(analysis.confidence_score or 50)
+            confidence = float(analysis.confidence_score or 0)
             signal_type = "long" if analysis.decision == "buy" else "short"
-            volume_ratio = indicators.get("volume_ratio", 1)
 
+            # Check for existing active signal
             existing = await db.execute(
                 select(TradeSignal).where(
                     TradeSignal.symbol == sym.symbol,
                     TradeSignal.status == "active",
-                    TradeSignal.signal_type == signal_type,
                 )
             )
             if existing.scalars().first():
@@ -114,7 +115,6 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
             ai_sl = indicators.get("stop_loss")
 
             if ai_entry and ai_tp1 and ai_sl:
-                # Gemini provided targets — use them directly
                 targets = {
                     "entry_price": float(ai_entry),
                     "target_1": float(ai_tp1),
@@ -125,13 +125,15 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
                 duration_minutes = indicators.get("duration_minutes", 60)
                 timeframe_used = indicators.get("timeframe", "1h")
             else:
-                # Classic analyzer — calculate targets
+                support = indicators.get("support", current_price * 0.97)
+                resistance = indicators.get("resistance", current_price * 1.03)
                 atr_pct = abs(resistance - support) / current_price * 100 if resistance > support else 2.0
                 atr_pct = max(1.0, min(atr_pct, 8.0))
                 targets = calculate_targets(current_price, signal_type, support, resistance, atr_pct)
                 duration_minutes = 60
                 timeframe_used = "1h"
 
+            volume_ratio = indicators.get("volume_ratio", 1)
             duration = estimate_signal_duration(timeframe_used, 2.0, volume_ratio if volume_ratio else 1)
 
             signal = TradeSignal(
@@ -144,12 +146,13 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
                 target_3=targets["target_3"],
                 stop_loss=targets["stop_loss"],
                 confidence=confidence,
-                reasoning=analysis.reasoning or "بناءً على التحليل الفني",
+                reasoning=analysis.reasoning or "بناءً على تحليل Gemini AI",
                 status="active",
                 technical_data={
                     **indicators,
                     "analysis_id": analysis.id,
                     "duration_reason": duration["reason"],
+                    "source": "gemini_confluence",
                 },
                 expires_at=duration["expires_at"],
             )
@@ -165,8 +168,8 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
 
 
 async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List[Dict]:
-    """Generate signals with live analysis and smart duration calculation."""
-    from app.services.analyzer import analyze_chart, check_momentum
+    """Generate signals using Gemini AI Confluence analysis."""
+    from app.services.confluence_analyzer import analyze_symbol_confluence
 
     result = await db.execute(
         select(SupportedSymbol).where(SupportedSymbol.is_active == True)
@@ -176,57 +179,27 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
 
     for sym in symbols:
         try:
-            chart = await analyze_chart(sym.symbol, timeframe)
-            momentum = await check_momentum(sym.symbol)
+            # Use Gemini Confluence analyzer
+            analysis_result = await analyze_symbol_confluence(sym.symbol, sym.base_asset)
 
-            current_price = chart.get("current_price", 0)
+            decision = analysis_result.get("decision", "no_opportunity")
+            if decision == "no_opportunity":
+                continue
+
+            indicators = analysis_result.get("technical_indicators", {})
+            
+            # Skip Gemini failures
+            if indicators.get("gemini_status") == "failed":
+                logger.warning(f"⚠️ Skipping {sym.symbol} — Gemini failed")
+                continue
+
+            confidence = float(analysis_result.get("confidence_score", 0))
+            signal_type = "long" if decision == "buy" else "short"
+            current_price = indicators.get("current_price", 0)
             if current_price <= 0:
                 continue
 
-            rsi = chart.get("rsi", 50)
-            support = chart.get("support", current_price * 0.97)
-            resistance = chart.get("resistance", current_price * 1.03)
-            trend = chart.get("trend", "عرضي")
-            smc_signal = chart.get("smc_signal")
-            volume_ratio = momentum.get("ratio", 1)
-
-            signal_type = None
-            confidence = 0
-            reasons = []
-
-            # SMC
-            if smc_signal and smc_signal.get("confidence", 0) >= 40:
-                smc_decision = smc_signal.get("decision")
-                if smc_decision in ("buy", "sell"):
-                    signal_type = "long" if smc_decision == "buy" else "short"
-                    confidence += smc_signal["confidence"] * 0.5
-                    reasons.extend(smc_signal.get("signals", []))
-
-            # Trend
-            if trend == "صاعد" and rsi < 75:
-                signal_type = signal_type or "long"
-                confidence += 25
-                reasons.append(f"📈 اتجاه صاعد على {timeframe} (RSI: {rsi:.0f})")
-            elif trend == "هابط" and rsi > 25:
-                signal_type = signal_type or "short"
-                confidence += 25
-                reasons.append(f"📉 اتجاه هابط على {timeframe} (RSI: {rsi:.0f})")
-
-            # Momentum
-            if momentum.get("is_real"):
-                confidence += 10
-                reasons.append(f"✅ زخم حقيقي ({momentum['reason']})")
-
-            if not signal_type:
-                continue
-
-            confidence = min(max(confidence, 30), 100)
-
-            # Skip if confidence below 85%
-            if confidence < 85:
-                continue
-
-            # Duplicate check — no active signal for same symbol in ANY direction
+            # Duplicate check — no active signal for same symbol
             existing = await db.execute(
                 select(TradeSignal).where(
                     TradeSignal.symbol == sym.symbol,
@@ -236,15 +209,30 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
             if existing.scalar_one_or_none():
                 continue
 
-            atr_pct = abs(resistance - support) / current_price * 100 if resistance > support else 2.0
-            atr_pct = max(1.0, min(atr_pct, 8.0))
-            targets = calculate_targets(current_price, signal_type, support, resistance, atr_pct)
+            # Use Gemini-provided targets if available
+            ai_entry = indicators.get("entry_price")
+            ai_tp1 = indicators.get("tp1")
+            ai_sl = indicators.get("stop_loss")
 
-            # Duration matches the timeframe exactly
-            duration = estimate_signal_duration(timeframe, atr_pct, volume_ratio)
+            if ai_entry and ai_tp1 and ai_sl:
+                targets = {
+                    "entry_price": float(ai_entry),
+                    "target_1": float(ai_tp1),
+                    "target_2": float(indicators.get("tp2", ai_tp1)),
+                    "target_3": float(indicators.get("tp3", ai_tp1)),
+                    "stop_loss": float(ai_sl),
+                }
+            else:
+                support = indicators.get("support", current_price * 0.97)
+                resistance = indicators.get("resistance", current_price * 1.03)
+                atr_pct = abs(resistance - support) / current_price * 100 if resistance > support else 2.0
+                atr_pct = max(1.0, min(atr_pct, 8.0))
+                targets = calculate_targets(current_price, signal_type, support, resistance, atr_pct)
+
+            timeframe_used = indicators.get("timeframe", timeframe)
+            volume_ratio = indicators.get("volume_ratio", 1)
+            duration = estimate_signal_duration(timeframe_used, 2.0, volume_ratio if volume_ratio else 1)
             tf_type = "short_term" if duration["is_short_term"] else "long_term"
-
-            reasons.append(f"⏱️ {duration['reason']}")
 
             signal = TradeSignal(
                 symbol=sym.symbol,
@@ -256,24 +244,21 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
                 target_3=targets["target_3"],
                 stop_loss=targets["stop_loss"],
                 confidence=confidence,
-                reasoning="\n".join(reasons),
+                reasoning=analysis_result.get("reasoning", "بناءً على تحليل Gemini AI"),
                 status="active",
                 technical_data={
-                    "timeframe": timeframe,
-                    "rsi": rsi,
-                    "trend": trend,
-                    "support": support,
-                    "resistance": resistance,
-                    "volume_ratio": volume_ratio,
+                    **indicators,
+                    "timeframe": timeframe_used,
                     "duration_minutes": duration["duration_minutes"],
                     "duration_reason": duration["reason"],
+                    "source": "gemini_confluence",
                 },
                 expires_at=duration["expires_at"],
             )
             db.add(signal)
             generated.append({
                 "symbol": sym.symbol, "type": signal_type, "tf": tf_type,
-                "confidence": confidence, "timeframe": timeframe,
+                "confidence": confidence, "timeframe": timeframe_used,
                 "duration_minutes": duration["duration_minutes"],
             })
 
@@ -281,7 +266,7 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
             logger.error(f"Live signal generation failed for {sym.symbol}: {e}")
 
     await db.commit()
-    logger.info(f"✅ Generated {len(generated)} live signals ({timeframe})")
+    logger.info(f"✅ Generated {len(generated)} live signals (Gemini)")
     return generated
 
 

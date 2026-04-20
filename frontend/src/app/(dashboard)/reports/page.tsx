@@ -85,35 +85,24 @@ export default function ReportsPage() {
     setAnalyses([]); // Clear UI immediately
 
     try {
-      // Step 1: Clear all old analyses and wait
+      // Step 1: Clear all old analyses
       await analysisApi.clearAll();
 
-      // Step 2: Trigger new analysis
-      await adminApi.runAnalysis();
+      // Step 2: Run analysis and WAIT for completion (sync endpoint)
+      await adminApi.runAnalysisSync();
 
-      // Step 3: Wait 5 seconds for first results, then poll every 3s
-      await new Promise(r => setTimeout(r, 5000));
-      for (let i = 0; i < 20; i++) {
-        const { data } = await analysisApi.getHistory(undefined, 50);
-        if (data.length > 0) {
-          setAnalyses(data);
-          // Keep polling a few more times for remaining symbols
-          for (let j = 0; j < 5; j++) {
-            await new Promise(r => setTimeout(r, 3000));
-            const { data: updated } = await analysisApi.getHistory(undefined, 50);
-            setAnalyses(updated);
-          }
-          break;
-        }
-        await new Promise(r => setTimeout(r, 3000));
-      }
-    } catch {}
-
-    // Final sync
-    try {
+      // Step 3: Fetch all results
       const { data } = await analysisApi.getHistory(undefined, 50);
       setAnalyses(data);
-    } catch {}
+    } catch (err: any) {
+      console.error("Analysis failed:", err);
+      // Try to fetch whatever was saved
+      try {
+        const { data } = await analysisApi.getHistory(undefined, 50);
+        setAnalyses(data);
+      } catch {}
+    }
+
     setRefreshing(false);
   }
 
@@ -465,17 +454,54 @@ export default function ReportsPage() {
 
               {/* Reasoning + Confidence */}
               <div style={{ padding: "16px 24px" }}>
+                {/* Gemini Failure Alert */}
+                {indicators.gemini_status === "failed" && (
+                  <div style={{
+                    padding: "10px 14px", marginBottom: 12, borderRadius: 8,
+                    background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
+                    fontSize: 13, color: "#dc2626", fontWeight: 600,
+                  }}>
+                    🚨 Gemini AI متعطل — لم يتم التحليل
+                  </div>
+                )}
+
                 {a.reasoning.split("\n").slice(0, 5).map((line, i) => (
                   <div key={i} style={{ fontSize: 13, color: line.includes("━━━") ? "var(--accent-blue)" : "var(--text-secondary)", marginBottom: 2, lineHeight: 1.7, fontWeight: line.includes("━━━") ? 700 : 400 }}>{line}</div>
                 ))}
+
+                {/* Confluence Score Breakdown */}
+                {(indicators.macro_score !== undefined || indicators.liquidity_score !== undefined || indicators.technical_score !== undefined) && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12, marginBottom: 10 }}>
+                    <div style={{ padding: "8px 10px", background: "var(--bg-primary)", borderRadius: 8, textAlign: "center" }}>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 2 }}>ماكرو</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: (indicators.macro_score || 0) >= 20 ? "#059669" : "#d97706" }}>
+                        {indicators.macro_score || 0}<span style={{ fontSize: 10, color: "var(--text-muted)" }}>/30</span>
+                      </div>
+                    </div>
+                    <div style={{ padding: "8px 10px", background: "var(--bg-primary)", borderRadius: 8, textAlign: "center" }}>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 2 }}>سيولة</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: (indicators.liquidity_score || 0) >= 17 ? "#059669" : "#d97706" }}>
+                        {indicators.liquidity_score || 0}<span style={{ fontSize: 10, color: "var(--text-muted)" }}>/25</span>
+                      </div>
+                    </div>
+                    <div style={{ padding: "8px 10px", background: "var(--bg-primary)", borderRadius: 8, textAlign: "center" }}>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 2 }}>فني</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: (indicators.technical_score || 0) >= 30 ? "#059669" : "#d97706" }}>
+                        {indicators.technical_score || 0}<span style={{ fontSize: 10, color: "var(--text-muted)" }}>/45</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Confluence Score Bar */}
                 <div style={{ marginTop: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>
-                    <span>TA + SMC</span><span style={{ fontWeight: 700 }}>{confidence}%</span>
+                    <span>Confluence Score</span><span style={{ fontWeight: 700 }}>{confidence}%</span>
                   </div>
                   <div className="bar-track">
                     <div className="bar-fill" style={{
                       width: `${confidence}%`,
-                      background: confidence >= 65 ? "var(--accent-green)" : confidence >= 35 ? "var(--accent-amber)" : "var(--accent-red)",
+                      background: confidence >= 85 ? "var(--accent-green)" : confidence >= 65 ? "var(--accent-blue)" : confidence >= 40 ? "var(--accent-amber)" : "var(--accent-red)",
                     }} />
                   </div>
                 </div>

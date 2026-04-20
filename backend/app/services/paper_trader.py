@@ -139,12 +139,16 @@ async def run_paper_bot_cycle(db: AsyncSession):
     enabled_settings = result.scalars().all()
 
     if not enabled_settings:
+        logger.info("📄 Paper bot: لا يوجد مستخدمين مفعّلين")
         return
 
     # First: update signal statuses (close expired/hit targets)
     await update_signal_statuses(db)
 
     for settings in enabled_settings:
+        user_min_confidence = float(settings.min_confidence)
+        cycle_log = []
+
         # Get user's paper wallet
         w_result = await db.execute(
             select(PaperWallet).where(
@@ -154,6 +158,8 @@ async def run_paper_bot_cycle(db: AsyncSession):
         )
         wallet = w_result.scalar_one_or_none()
         if not wallet:
+            cycle_log.append("⛔ لا توجد محفظة وهمية نشطة")
+            logger.info(f"🤖 دورة بوت [{settings.user_id[:8]}]: {' | '.join(cycle_log)}")
             continue
 
         # Check daily trade count
@@ -167,6 +173,8 @@ async def run_paper_bot_cycle(db: AsyncSession):
         )
         today_trades = count_result.scalar() or 0
         if today_trades >= settings.max_trades_per_day:
+            cycle_log.append(f"⛔ تم الوصول للحد اليومي: {today_trades}/{settings.max_trades_per_day}")
+            logger.info(f"🤖 دورة بوت [{settings.user_id[:8]}]: {' | '.join(cycle_log)}")
             continue
 
         # Auto-sell holdings that hit target or stop — based on closed signals
@@ -174,6 +182,7 @@ async def run_paper_bot_cycle(db: AsyncSession):
             select(PaperHolding).where(PaperHolding.wallet_id == wallet.id)
         )
         holdings = h_result.scalars().all()
+        sell_count = 0
         for holding in holdings:
             if float(holding.quantity) <= 0:
                 continue
@@ -201,18 +210,25 @@ async def run_paper_bot_cycle(db: AsyncSession):
                             amount_usdt=sell_amount, db=db,
                             executed_by="paper_bot",
                         )
+                        sell_count += 1
                         logger.info(f"🤖 Auto-sell {holding.symbol} ({closed_signal.status})")
 
-        # Auto-buy from active signals
+        if sell_count > 0:
+            cycle_log.append(f"💰 {sell_count} صفقة بيع تلقائية")
+
+        # Auto-buy from active signals (Long + Short)
         sig_result = await db.execute(
             select(TradeSignal).where(
                 TradeSignal.status == "active",
-                TradeSignal.signal_type == "long",
-                TradeSignal.confidence >= float(settings.min_confidence or 85),
+                TradeSignal.signal_type.in_(["long", "short"]),
+                TradeSignal.confidence >= user_min_confidence,
             )
         )
         active_signals = sig_result.scalars().all()
+        cycle_log.append(f"📊 {len(active_signals)} إشارة نشطة (ثقة >= {user_min_confidence}%)")
 
+        buy_count = 0
+        skip_count = 0
         for signal in active_signals:
             # Check if already holding this symbol
             existing = await db.execute(
@@ -222,6 +238,7 @@ async def run_paper_bot_cycle(db: AsyncSession):
                 )
             )
             if existing.scalar_one_or_none():
+                skip_count += 1
                 continue  # Already holding
 
             trade_amount = min(
@@ -229,6 +246,7 @@ async def run_paper_bot_cycle(db: AsyncSession):
                 float(wallet.current_balance) * float(settings.max_portfolio_percentage) / 100,
             )
             if trade_amount < 5:
+                cycle_log.append(f"⛔ {signal.symbol}: رصيد غير كافٍ (${trade_amount:.2f})")
                 continue
 
             await execute_paper_trade(
@@ -237,7 +255,17 @@ async def run_paper_bot_cycle(db: AsyncSession):
                 amount_usdt=trade_amount, db=db,
                 executed_by="paper_bot",
             )
-            logger.info(f"🤖 Auto-buy {signal.symbol} (confidence: {signal.confidence}%)")
+            buy_count += 1
+            logger.info(f"🤖 Auto-buy {signal.symbol} ({signal.signal_type}, ثقة: {signal.confidence}%)")
+
+        if buy_count > 0:
+            cycle_log.append(f"✅ {buy_count} صفقة شراء")
+        if skip_count > 0:
+            cycle_log.append(f"⏭️ {skip_count} تم تخطيها (موجودة مسبقاً)")
+        if buy_count == 0 and sell_count == 0:
+            cycle_log.append("➖ لا صفقات جديدة")
+
+        logger.info(f"🤖 دورة بوت [{settings.user_id[:8]}]: {' | '.join(cycle_log)}")
 
     await db.commit()
     logger.info("✅ Paper bot cycle complete")

@@ -62,12 +62,23 @@ async def run_analysis_job():
                     import asyncio
                     await asyncio.sleep(3)
 
-                # Try Confluence AI first, fallback to classic
+                # Try Confluence AI
                 try:
                     analysis_result = await analyze_symbol_confluence(sym.symbol, sym.base_asset)
                 except Exception as e:
-                    logger.warning(f"Confluence failed for {sym.symbol}: {e}, using classic")
-                    analysis_result = await analyze_symbol(sym.symbol, sym.base_asset)
+                    logger.error(f"Confluence failed for {sym.symbol}: {e}")
+                    analysis_result = {
+                        "symbol": sym.symbol,
+                        "decision": "no_opportunity",
+                        "confidence_score": 0,
+                        "reasoning": f"🚨 خطأ في التحليل: {str(e)}",
+                        "is_momentum_real": None,
+                        "price_confirmed_news": None,
+                        "news_source": "Gemini AI (ERROR)",
+                        "news_title": f"🚨 خطأ Gemini: {str(e)[:100]}",
+                        "news_url": None,
+                        "technical_indicators": {"gemini_status": "failed"},
+                    }
 
                 # Save to DB
                 analysis = BotAnalysis(**analysis_result)
@@ -342,12 +353,12 @@ async def lifespan(app: FastAPI):
 
     # Start scheduler
     scheduler.add_job(run_analysis_job, "interval", hours=1, id="analysis_job")
-    scheduler.add_job(run_paper_bot_job, "interval", hours=1, id="paper_bot_job", minutes=5)
-    scheduler.add_job(run_signals_job, "interval", hours=2, id="signals_job")
+    scheduler.add_job(run_paper_bot_job, "interval", minutes=10, id="paper_bot_job")
+    scheduler.add_job(run_signals_job, "interval", minutes=30, id="signals_job")
     scheduler.start()
     logger.info("⏰ Analysis scheduler started (every 1 hour)")
-    logger.info("⏰ Paper bot scheduler started (every 1 hour)")
-    logger.info("⏰ Signal generator started (every 2 hours)")
+    logger.info("⏰ Paper bot scheduler started (every 10 minutes)")
+    logger.info("⏰ Signal generator started (every 30 minutes)")
 
     yield
 
@@ -393,7 +404,14 @@ async def health_check():
 
 @app.post("/api/admin/run-analysis")
 async def trigger_analysis(admin: User = Depends(require_admin)):
-    """Manually trigger analysis (admin only — protected)."""
+    """Manually trigger analysis (admin only — async, returns immediately)."""
     import asyncio
     asyncio.create_task(run_analysis_job())
     return {"message": "تم بدء التحليل"}
+
+
+@app.post("/api/admin/run-analysis-sync")
+async def trigger_analysis_sync(admin: User = Depends(require_admin)):
+    """Manually trigger analysis and WAIT for completion (admin only)."""
+    await run_analysis_job()
+    return {"message": "✅ تم التحليل بنجاح"}

@@ -65,6 +65,7 @@ export const adminApi = {
   approveAutoTrade: (userId: string) =>
     api.patch(`/api/admin/users/${userId}/approve-auto-trade`),
   runAnalysis: () => api.post("/api/admin/run-analysis"),
+  runAnalysisSync: () => api.post("/api/admin/run-analysis-sync", null, { timeout: 120000 }),
 };
 
 // ===== Wallets =====

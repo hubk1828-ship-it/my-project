@@ -403,18 +403,16 @@ async def analyze_symbol_confluence(symbol: str, base_asset: str) -> Dict:
     result = await call_gemini(prompt)
 
     if not result:
-        # Gemini failed — actually run classic analyzer
-        logger.warning(f"Gemini failed for {symbol}, using classic analyzer")
-        from app.services.analyzer import analyze_symbol
-        return await analyze_symbol(symbol, base_asset)
+        # Gemini failed — DO NOT fallback to classic analyzer (could harm trades)
+        logger.error(f"🚨 Gemini failed for {symbol} — NO fallback, returning failure")
+        return _gemini_failure_result(symbol, data.get("current_price", 0))
 
-    # Step 3: Parse result
+    # Step 3: Parse result — show Gemini's direction as-is
+    # The confidence score is informational; filtering happens in signal_generator
     score = result.get("confluence_score", 0)
     direction = result.get("direction", "none")
 
-    if direction == "none" or score < 85:
-        decision = "no_opportunity"
-    elif direction == "long":
+    if direction == "long":
         decision = "buy"
     elif direction == "short":
         decision = "sell"
@@ -522,4 +520,23 @@ def _fallback_result(symbol: str) -> Dict:
         "news_title": None,
         "news_url": None,
         "technical_indicators": {},
+    }
+
+
+def _gemini_failure_result(symbol: str, current_price: float = 0) -> Dict:
+    """Return a clear failure result when Gemini is down — NO fallback to classic."""
+    return {
+        "symbol": symbol,
+        "decision": "no_opportunity",
+        "confidence_score": 0,
+        "reasoning": "🚨 تعطّل Gemini AI — لم يتم التحليل\n⚠️ لا يوجد fallback — التداول متوقف حتى يعود Gemini\n🔧 تحقق من مفتاح API أو حالة الخدمة",
+        "is_momentum_real": None,
+        "price_confirmed_news": None,
+        "news_source": "Gemini AI (FAILED)",
+        "news_title": "🚨 Gemini AI متعطل",
+        "news_url": None,
+        "technical_indicators": {
+            "current_price": current_price,
+            "gemini_status": "failed",
+        },
     }
