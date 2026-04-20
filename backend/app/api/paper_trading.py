@@ -60,7 +60,7 @@ async def get_paper_wallet(
     result = await db.execute(
         select(PaperWallet).where(PaperWallet.user_id == user.id, PaperWallet.is_active == True)
     )
-    wallet = result.scalar_one_or_none()
+    wallet = result.scalars().first()
     if not wallet:
         raise HTTPException(404, "لا توجد محفظة وهمية. قم بإنشاء واحدة")
 
