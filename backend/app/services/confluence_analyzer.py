@@ -12,7 +12,6 @@ from typing import Dict, List, Optional
 from datetime import datetime, timezone
 
 import httpx
-import google.generativeai as genai
 
 from app.core.config import get_settings
 from app.services.binance_client import (
@@ -22,9 +21,7 @@ from app.services.binance_client import (
 settings = get_settings()
 logger = logging.getLogger("confluence")
 
-# Configure Gemini
-if settings.GEMINI_API_KEY:
-    genai.configure(api_key=settings.GEMINI_API_KEY)
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent"
 
 
 # ===== Data Collection =====
@@ -347,31 +344,40 @@ Open Interest: {oi_text}
 # ===== Gemini AI Call =====
 
 async def call_gemini(prompt: str) -> Optional[Dict]:
-    """Call Gemini AI and parse JSON response."""
+    """Call Gemini AI via REST API and parse JSON response."""
     if not settings.GEMINI_API_KEY:
         logger.warning("No Gemini API key configured")
         return None
 
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash-lite")
-        response = await asyncio.to_thread(
-            model.generate_content,
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.3,
-                max_output_tokens=2000,
-            ),
-        )
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{GEMINI_API_URL}?key={settings.GEMINI_API_KEY}",
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.3,
+                        "maxOutputTokens": 2000,
+                    },
+                },
+                timeout=60,
+                headers={"Content-Type": "application/json"},
+            )
 
-        text = response.text.strip()
+            if resp.status_code != 200:
+                logger.error(f"Gemini API {resp.status_code}: {resp.text[:300]}")
+                return None
 
-        # Extract JSON from response
-        json_match = re.search(r'\{[\s\S]*\}', text)
-        if json_match:
-            return json.loads(json_match.group())
+            data = resp.json()
+            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-        logger.warning(f"Could not parse Gemini response: {text[:200]}")
-        return None
+            # Extract JSON from response
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if json_match:
+                return json.loads(json_match.group())
+
+            logger.warning(f"Could not parse Gemini response: {text[:200]}")
+            return None
 
     except Exception as e:
         logger.error(f"Gemini API error: {e}")
