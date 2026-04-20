@@ -51,6 +51,41 @@ async def create_paper_wallet(
     return wallet
 
 
+@router.post("/wallet/reset", response_model=PaperWalletResponse)
+async def reset_paper_wallet(
+    data: PaperWalletCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset paper wallet — delete everything and start fresh."""
+    from sqlalchemy import delete
+
+    # Get all user wallets
+    result = await db.execute(
+        select(PaperWallet).where(PaperWallet.user_id == user.id)
+    )
+    wallets = result.scalars().all()
+
+    # Delete trades and holdings for all wallets
+    for w in wallets:
+        await db.execute(delete(PaperTrade).where(PaperTrade.wallet_id == w.id))
+        await db.execute(delete(PaperHolding).where(PaperHolding.wallet_id == w.id))
+
+    # Delete all wallets
+    await db.execute(delete(PaperWallet).where(PaperWallet.user_id == user.id))
+
+    # Create fresh wallet
+    wallet = PaperWallet(
+        user_id=user.id,
+        initial_balance=data.initial_balance,
+        current_balance=data.initial_balance,
+        label=data.label or "محفظة وهمية",
+    )
+    db.add(wallet)
+    await db.commit()
+    await db.refresh(wallet)
+    return wallet
+
 @router.get("/wallet", response_model=PaperWalletDetail)
 async def get_paper_wallet(
     user: User = Depends(get_current_user),
