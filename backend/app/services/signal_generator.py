@@ -105,13 +105,34 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
                     TradeSignal.signal_type == signal_type,
                 )
             )
-            if existing.scalar_one_or_none():
+            if existing.scalars().first():
                 continue
 
-            atr_pct = abs(resistance - support) / current_price * 100 if resistance > support else 2.0
-            atr_pct = max(1.0, min(atr_pct, 8.0))
-            targets = calculate_targets(current_price, signal_type, support, resistance, atr_pct)
-            duration = estimate_signal_duration("1h", atr_pct, volume_ratio)
+            # Use AI-provided targets if available (from Confluence analyzer)
+            ai_entry = indicators.get("entry_price")
+            ai_tp1 = indicators.get("tp1")
+            ai_sl = indicators.get("stop_loss")
+
+            if ai_entry and ai_tp1 and ai_sl:
+                # Gemini provided targets — use them directly
+                targets = {
+                    "entry_price": float(ai_entry),
+                    "target_1": float(ai_tp1),
+                    "target_2": float(indicators.get("tp2", ai_tp1)),
+                    "target_3": float(indicators.get("tp3", ai_tp1)),
+                    "stop_loss": float(ai_sl),
+                }
+                duration_minutes = indicators.get("duration_minutes", 60)
+                timeframe_used = indicators.get("timeframe", "1h")
+            else:
+                # Classic analyzer — calculate targets
+                atr_pct = abs(resistance - support) / current_price * 100 if resistance > support else 2.0
+                atr_pct = max(1.0, min(atr_pct, 8.0))
+                targets = calculate_targets(current_price, signal_type, support, resistance, atr_pct)
+                duration_minutes = 60
+                timeframe_used = "1h"
+
+            duration = estimate_signal_duration(timeframe_used, 2.0, volume_ratio if volume_ratio else 1)
 
             signal = TradeSignal(
                 symbol=sym.symbol,
