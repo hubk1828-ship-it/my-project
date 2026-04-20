@@ -35,7 +35,7 @@ async def create_paper_wallet(
     result = await db.execute(
         select(PaperWallet).where(PaperWallet.user_id == user.id, PaperWallet.is_active == True)
     )
-    existing = result.scalar_one_or_none()
+    existing = result.scalars().first()
     if existing:
         raise HTTPException(400, "لديك محفظة وهمية نشطة بالفعل. قم بحذفها أولاً")
 
