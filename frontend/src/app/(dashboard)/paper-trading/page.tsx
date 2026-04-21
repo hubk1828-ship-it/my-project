@@ -348,6 +348,8 @@ export default function PaperTradingPage() {
             { label: "الحد الأقصى للصفقات يومياً", key: "max_trades_per_day", value: botSettings.max_trades_per_day },
             { label: "الحد الأقصى لكل صفقة (USDT)", key: "max_trade_amount", value: botSettings.max_trade_amount },
             { label: "نسبة المحفظة القصوى لكل صفقة (%)", key: "max_portfolio_percentage", value: botSettings.max_portfolio_percentage },
+            { label: "نسبة حجم الصفقة من المحفظة (%)", key: "trade_size_pct", value: (botSettings as any).trade_size_pct ?? 20 },
+            { label: "أقصى عدد مراكز مفتوحة", key: "max_open_positions", value: (botSettings as any).max_open_positions ?? 5 },
             { label: "الحد الأقصى للخسارة اليومية (USDT)", key: "max_daily_loss", value: (botSettings as any).max_daily_loss ?? 200 },
             { label: "الحد الأدنى لوقف الخسارة (USDT)", key: "min_loss_limit", value: (botSettings as any).min_loss_limit ?? 10 },
             { label: "الحد الأعلى لوقف الخسارة (USDT)", key: "max_loss_limit", value: (botSettings as any).max_loss_limit ?? 500 },

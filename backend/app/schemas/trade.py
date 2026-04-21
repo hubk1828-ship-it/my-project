@@ -34,6 +34,8 @@ class TradeLimitsUpdate(BaseModel):
     max_loss_limit: Optional[float] = None
     min_confidence: Optional[float] = None
     signal_duration_multiplier: Optional[float] = None
+    trade_size_pct: Optional[float] = None
+    max_open_positions: Optional[int] = None
 
 
 class BotSettingsResponse(BaseModel):
@@ -47,6 +49,8 @@ class BotSettingsResponse(BaseModel):
     max_loss_limit: float
     min_confidence: float
     signal_duration_multiplier: float
+    trade_size_pct: float = 20
+    max_open_positions: int = 5
     updated_at: Optional[datetime] = None
 
     class Config:

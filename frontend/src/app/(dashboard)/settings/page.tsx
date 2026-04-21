@@ -58,6 +58,8 @@ export default function SettingsPage() {
         max_daily_loss: botSettings.max_daily_loss,
         min_loss_limit: botSettings.min_loss_limit,
         max_loss_limit: botSettings.max_loss_limit,
+        trade_size_pct: (botSettings as any).trade_size_pct,
+        max_open_positions: (botSettings as any).max_open_positions,
       });
       setSaveMsg("✅ تم حفظ الحدود");
       setTimeout(() => setSaveMsg(""), 3000);
@@ -157,23 +159,27 @@ export default function SettingsPage() {
                   onChange={(e) => setBotSettings(s => s ? {...s, max_portfolio_percentage: +e.target.value} : s)} />
               </div>
               <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>نسبة حجم الصفقة من المحفظة (%)</label>
+                <input className="form-input" type="number" value={(botSettings as any)?.trade_size_pct || 20}
+                  onChange={(e) => setBotSettings(s => s ? {...s, trade_size_pct: +e.target.value} : s)} />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>أقصى عدد مراكز مفتوحة</label>
+                <input className="form-input" type="number" value={(botSettings as any)?.max_open_positions || 5}
+                  onChange={(e) => setBotSettings(s => s ? {...s, max_open_positions: +e.target.value} : s)} />
+              </div>
+              <div>
                 <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>الخسارة اليومية القصوى (USDT)</label>
                 <input className="form-input" type="number" value={botSettings?.max_daily_loss || 50}
                   onChange={(e) => setBotSettings(s => s ? {...s, max_daily_loss: +e.target.value} : s)} />
               </div>
               <div>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                  الحد الأدنى للخسارة (USDT)
-                  <span style={{ color: "var(--accent-amber)", marginRight: 4 }}>*جديد</span>
-                </label>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>الحد الأدنى للخسارة (USDT)</label>
                 <input className="form-input" type="number" value={botSettings?.min_loss_limit || 10}
                   onChange={(e) => setBotSettings(s => s ? {...s, min_loss_limit: +e.target.value} : s)} />
               </div>
               <div>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                  الحد الأعلى للخسارة (USDT)
-                  <span style={{ color: "var(--accent-amber)", marginRight: 4 }}>*جديد</span>
-                </label>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>الحد الأعلى للخسارة (USDT)</label>
                 <input className="form-input" type="number" value={botSettings?.max_loss_limit || 200}
                   onChange={(e) => setBotSettings(s => s ? {...s, max_loss_limit: +e.target.value} : s)} />
               </div>
