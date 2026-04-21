@@ -59,7 +59,7 @@ export default function ReportsPage() {
   async function loadData() {
     try {
       const [aRes, sRes] = await Promise.all([
-        analysisApi.getHistory(undefined, 50),
+        analysisApi.getHistory(undefined, 10),
         marketApi.getSymbols(),
       ]);
       setAnalyses(aRes.data);
@@ -92,13 +92,13 @@ export default function ReportsPage() {
       await adminApi.runAnalysisSync();
 
       // Step 3: Fetch all results
-      const { data } = await analysisApi.getHistory(undefined, 50);
+      const { data } = await analysisApi.getHistory(undefined, 10);
       setAnalyses(data);
     } catch (err: any) {
       console.error("Analysis failed:", err);
       // Try to fetch whatever was saved
       try {
-        const { data } = await analysisApi.getHistory(undefined, 50);
+        const { data } = await analysisApi.getHistory(undefined, 10);
         setAnalyses(data);
       } catch {}
     }
@@ -422,14 +422,24 @@ export default function ReportsPage() {
                 </span>
               </div>
 
+              {/* Price */}
+              <div style={{ padding: "12px 24px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: 18, fontWeight: 800 }}>
+                  ${indicators.current_price ? indicators.current_price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: indicators.current_price < 1 ? 6 : 2 }) : "—"}
+                </div>
+              </div>
+
               {/* Tech grid */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 0, borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
                 {[
                   { label: "RSI", value: indicators.rsi?.toFixed(1), color: (indicators.rsi || 0) > 70 ? "#dc2626" : (indicators.rsi || 0) < 30 ? "#059669" : undefined },
-                  { label: "الاتجاه", value: indicators.trend },
+                  { label: "الاتجاه", value: indicators.trend === "bullish" ? "صاعد" : indicators.trend === "bearish" ? "هابط" : indicators.trend || "—" },
                   { label: "حجم", value: indicators.volume_ratio ? `${indicators.volume_ratio}x` : "—" },
+                  { label: "FR", value: indicators.funding_rate != null ? `${(indicators.funding_rate * 100).toFixed(3)}%` : "—" },
+                  { label: "الدعم", value: indicators.support ? `$${indicators.support.toLocaleString()}` : "—", color: "#059669" },
+                  { label: "المقاومة", value: indicators.resistance ? `$${indicators.resistance.toLocaleString()}` : "—", color: "#dc2626" },
                 ].map((item, i) => (
-                  <div key={i} style={{ padding: "10px 14px", borderRight: i < 2 ? "1px solid var(--border)" : "none" }}>
+                  <div key={i} style={{ padding: "10px 14px", borderRight: i < 5 ? "1px solid var(--border)" : "none", textAlign: "center" }}>
                     <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 2 }}>{item.label}</div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: item.color || "var(--text-primary)" }}>{item.value || "—"}</div>
                   </div>
@@ -455,13 +465,13 @@ export default function ReportsPage() {
               {/* Reasoning + Confidence */}
               <div style={{ padding: "16px 24px" }}>
                 {/* Gemini Failure Alert */}
-                {indicators.gemini_status === "failed" && (
+                {(indicators.gemini_status === "failed" || indicators.ai_status === "failed") && (
                   <div style={{
                     padding: "10px 14px", marginBottom: 12, borderRadius: 8,
                     background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
                     fontSize: 13, color: "#dc2626", fontWeight: 600,
                   }}>
-                    🚨 Gemini AI متعطل — لم يتم التحليل
+                    🚨 AI متعطل — لم يتم التحليل
                   </div>
                 )}
 

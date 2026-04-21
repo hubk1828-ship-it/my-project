@@ -28,8 +28,9 @@ class Settings(BaseSettings):
     BINANCE_FUTURES_URL: str = "https://fapi.binance.com"
     BINANCE_WS_URL: str = "wss://stream.binance.com:9443/ws"
 
-    # Gemini AI
+    # AI Providers
     GEMINI_API_KEY: str = ""
+    GROQ_API_KEY: str = ""  # Optional fallback
 
     # Bybit
     BYBIT_BASE_URL: str = "https://api.bybit.com"

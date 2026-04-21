@@ -7,7 +7,7 @@ settings = get_settings()
 # SQLite doesn't support pool_size/max_overflow — only set for non-sqlite
 connect_args = {}
 engine_kwargs = {
-    "echo": settings.APP_DEBUG,
+    "echo": False,
 }
 
 if settings.DATABASE_URL.startswith("sqlite"):

@@ -4,6 +4,7 @@ import { paperApi, marketApi } from "@/lib/api";
 
 interface Holding {
   id: string; symbol: string; asset: string; quantity: number; avg_buy_price: number;
+  take_profit_price?: number; stop_loss_price?: number; signal_id?: string;
 }
 interface WalletDetail {
   wallet: { id: string; label: string; initial_balance: number; current_balance: number; created_at: string };
@@ -37,6 +38,7 @@ export default function PaperTradingPage() {
   const [tradeResult, setTradeResult] = useState<string>("");
 
   const [activeTab, setActiveTab] = useState<"wallet" | "trades" | "bot">("wallet");
+  const [selectedTrade, setSelectedTrade] = useState<PaperTrade | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -219,15 +221,33 @@ export default function PaperTradingPage() {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {w.holdings.map(h => (
-                  <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", borderRadius: 10, background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700 }}>{h.asset}</div>
-                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{h.quantity.toFixed(6)}</div>
+                  <div key={h.id} style={{ padding: "14px 16px", borderRadius: 10, background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 800 }}>{h.asset}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{h.quantity.toFixed(6)} {h.asset}</div>
+                      </div>
+                      <div style={{ textAlign: "left" }}>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>${h.avg_buy_price.toFixed(2)}</div>
+                        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>سعر الدخول</div>
+                      </div>
                     </div>
-                    <div style={{ textAlign: "left" }}>
-                      <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>متوسط الشراء</div>
-                      <div style={{ fontSize: 14, fontWeight: 700 }}>${h.avg_buy_price.toFixed(2)}</div>
-                    </div>
+                    {(h.take_profit_price || h.stop_loss_price) && (
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {h.take_profit_price ? (
+                          <div style={{ flex: 1, padding: "6px 10px", borderRadius: 6, background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.15)", textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: "#10b981", fontWeight: 600 }}>🎯 TP</div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: "#10b981" }}>${h.take_profit_price.toFixed(2)}</div>
+                          </div>
+                        ) : null}
+                        {h.stop_loss_price ? (
+                          <div style={{ flex: 1, padding: "6px 10px", borderRadius: 6, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: "#ef4444", fontWeight: 600 }}>🛑 SL</div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: "#ef4444" }}>${h.stop_loss_price.toFixed(2)}</div>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -249,7 +269,10 @@ export default function PaperTradingPage() {
             </thead>
             <tbody>
               {trades.map(t => (
-                <tr key={t.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                <tr key={t.id} style={{ borderBottom: "1px solid var(--border)", cursor: "pointer" }}
+                  onClick={() => setSelectedTrade(selectedTrade?.id === t.id ? null : t)}
+                  onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-secondary)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "")}>
                   <td style={{ padding: "10px 14px", fontWeight: 700 }}>{t.symbol}</td>
                   <td style={{ padding: "10px 14px" }}>
                     <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: t.side === "buy" ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)", color: t.side === "buy" ? "#10b981" : "#ef4444" }}>
@@ -272,6 +295,35 @@ export default function PaperTradingPage() {
             </tbody>
           </table>
         </div>
+
+          {/* Trade Detail Panel */}
+          {selectedTrade && (
+            <div className="card slide-in" style={{ padding: 24, marginTop: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <h4 style={{ fontSize: 15, fontWeight: 800 }}>📋 تفاصيل الصفقة</h4>
+                <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 12px" }} onClick={() => setSelectedTrade(null)}>✕</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+                {[
+                  { label: "العملة", value: selectedTrade.symbol, icon: "💰" },
+                  { label: "النوع", value: selectedTrade.side === "buy" ? "شراء" : "بيع", icon: selectedTrade.side === "buy" ? "🟢" : "🔴", color: selectedTrade.side === "buy" ? "#10b981" : "#ef4444" },
+                  { label: "سعر التنفيذ", value: `$${selectedTrade.price.toFixed(2)}`, icon: "📌" },
+                  { label: "الكمية", value: selectedTrade.quantity.toFixed(6), icon: "📦" },
+                  { label: "القيمة الإجمالية", value: `$${selectedTrade.total_value.toFixed(2)}`, icon: "💵" },
+                  { label: "الربح/الخسارة", value: selectedTrade.side === "sell" ? `${selectedTrade.pnl >= 0 ? "+" : ""}$${(selectedTrade.pnl || 0).toFixed(2)}` : "—", icon: selectedTrade.pnl >= 0 ? "📈" : "📉", color: (selectedTrade.pnl || 0) >= 0 ? "#10b981" : "#ef4444" },
+                  { label: "المنفذ", value: selectedTrade.executed_by === "paper_bot" ? "🤖 بوت آلي" : "✋ يدوي", icon: "⚙️" },
+                  { label: "التاريخ", value: new Date(selectedTrade.created_at).toLocaleString("ar-SA"), icon: "🕐" },
+                ].map((item, i) => (
+                  <div key={i} style={{ padding: "10px 14px", borderRadius: 8, background: "var(--bg-secondary)", textAlign: "center" }}>
+                    <div style={{ fontSize: 18, marginBottom: 4 }}>{item.icon}</div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 600, marginBottom: 2 }}>{item.label}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: item.color || "var(--text-primary)" }}>{item.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Bot Settings Tab */}

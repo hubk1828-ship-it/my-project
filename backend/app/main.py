@@ -60,7 +60,7 @@ async def run_analysis_job():
                 # Delay between symbols to avoid Binance rate limits
                 if i > 0:
                     import asyncio
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(10)
 
                 # Try Confluence AI
                 try:
@@ -74,16 +74,22 @@ async def run_analysis_job():
                         "reasoning": f"🚨 خطأ في التحليل: {str(e)}",
                         "is_momentum_real": None,
                         "price_confirmed_news": None,
-                        "news_source": "Gemini AI (ERROR)",
+                        "news_source": "AI (ERROR)",
                         "news_title": f"🚨 خطأ Gemini: {str(e)[:100]}",
                         "news_url": None,
                         "technical_indicators": {"gemini_status": "failed"},
                     }
 
-                # Save to DB
+                # Save to DB — delete old analysis for same symbol first
+                old_analyses = await db.execute(
+                    select(BotAnalysis).where(BotAnalysis.symbol == sym.symbol)
+                )
+                for old in old_analyses.scalars().all():
+                    await db.delete(old)
+
                 analysis = BotAnalysis(**analysis_result)
                 db.add(analysis)
-                await db.flush()
+                await db.commit()
 
                 # If opportunity found, notify users and execute auto-trades
                 if analysis.decision in ("buy", "sell"):
@@ -170,6 +176,17 @@ async def run_paper_bot_job():
         await run_paper_bot_cycle(db)
 
 
+async def run_price_monitor_job():
+    """Runs every 5 seconds - checks targets/stops from WebSocket cache."""
+    from app.services.price_monitor import run_price_monitor, run_paper_auto_buy
+    try:
+        async with AsyncSessionLocal() as db:
+            await run_price_monitor(db)
+            await run_paper_auto_buy(db)
+    except Exception as e:
+        logger.error(f"Price monitor error: {e}")
+
+
 async def run_signals_job():
     """Scheduled job: generate trade signals, update statuses, and clean old analyses."""
     from app.services.signal_generator import generate_signals, update_signal_statuses
@@ -216,21 +233,7 @@ async def seed_default_data():
 
             logger.info("✅ Default admin created: admin@cryptoanalyzer.local / admin123")
 
-        # Seed default symbols
-        default_symbols = [
-            ("BTCUSDT", "BTC", True), ("ETHUSDT", "ETH", True),
-            ("BNBUSDT", "BNB", False), ("SOLUSDT", "SOL", False),
-            ("XRPUSDT", "XRP", False), ("ADAUSDT", "ADA", False),
-            ("DOGEUSDT", "DOGE", False), ("AVAXUSDT", "AVAX", False),
-        ]
-        for symbol, base, is_default in default_symbols:
-            existing = await db.execute(
-                select(SupportedSymbol).where(SupportedSymbol.symbol == symbol)
-            )
-            if not existing.scalar_one_or_none():
-                db.add(SupportedSymbol(symbol=symbol, base_asset=base, is_default=is_default))
-
-        # Seed default trusted news sources
+        # Seed default trusted news sources (only)
         default_sources = [
             ("CoinDesk", "https://coindesk.com"),
             ("Reuters", "https://reuters.com"),
@@ -245,63 +248,6 @@ async def seed_default_data():
             )
             if not existing.scalar_one_or_none():
                 db.add(TrustedNewsSource(name=name, url=url, is_suggested=True))
-
-        # Seed demo analysis data
-        from datetime import datetime, timezone
-        existing_analysis = await db.execute(select(BotAnalysis).limit(1))
-        if not existing_analysis.scalar_one_or_none():
-            demo_analyses = [
-                BotAnalysis(
-                    symbol="BTCUSDT", timeframe="1h",
-                    news_source="Reuters", news_title="Bitcoin ETF inflows reach new weekly high",
-                    news_url="https://reuters.com/example",
-                    is_momentum_real=True, price_confirmed_news=True,
-                    decision="buy", confidence_score=85,
-                    reasoning="✅ زخم حقيقي (حجم التداول أعلى من المتوسط بنسبة 180%)\n✅ السعر أكّد الخبر (تغيّر +2.3%)\n✅ اتجاه صاعد (RSI: 58, EMA20 > EMA50)",
-                    technical_indicators={"rsi": 58.2, "ema20": 67432.5, "ema50": 65210.8, "support": 63500, "resistance": 69800, "trend": "صاعد", "volume_ratio": 1.8, "price_change_pct": 2.3, "current_price": 67432.50},
-                    created_at=datetime.now(timezone.utc),
-                ),
-                BotAnalysis(
-                    symbol="ETHUSDT", timeframe="1h",
-                    news_source="CoinDesk", news_title="Ethereum network upgrade scheduled for next month",
-                    news_url="https://coindesk.com/example",
-                    is_momentum_real=True, price_confirmed_news=True,
-                    decision="sell", confidence_score=72,
-                    reasoning="✅ زخم حقيقي (حجم التداول أعلى من المتوسط بنسبة 165%)\n✅ السعر أكّد الخبر (تغيّر -1.8%)\n✅ اتجاه هابط (RSI: 35, EMA20 < EMA50)",
-                    technical_indicators={"rsi": 35.1, "ema20": 3380.2, "ema50": 3520.6, "support": 3200, "resistance": 3650, "trend": "هابط", "volume_ratio": 1.65, "price_change_pct": -1.8, "current_price": 3421.80},
-                    created_at=datetime.now(timezone.utc),
-                ),
-                BotAnalysis(
-                    symbol="SOLUSDT", timeframe="1h",
-                    news_source=None, news_title=None, news_url=None,
-                    is_momentum_real=False, price_confirmed_news=None,
-                    decision="no_opportunity", confidence_score=25,
-                    reasoning="❌ زخم ضعيف (حجم التداول أقل من المتوسط بنسبة 85%)\n⚠️ لا يوجد خبر مؤثر للمقارنة\n⚠️ اتجاه عرضي — لا وضوح (RSI: 48, EMA20 ≈ EMA50)",
-                    technical_indicators={"rsi": 48.5, "ema20": 142.3, "ema50": 143.1, "support": 130, "resistance": 155, "trend": "عرضي", "volume_ratio": 0.85, "price_change_pct": 0, "current_price": 142.65},
-                    created_at=datetime.now(timezone.utc),
-                ),
-                BotAnalysis(
-                    symbol="BNBUSDT", timeframe="1h",
-                    news_source=None, news_title=None, news_url=None,
-                    is_momentum_real=False, price_confirmed_news=None,
-                    decision="no_opportunity", confidence_score=40,
-                    reasoning="❌ زخم ضعيف (حجم التداول أقل من المتوسط بنسبة 110%)\n⚠️ لا يوجد خبر مؤثر للمقارنة\n⚠️ اتجاه عرضي — لا وضوح (RSI: 52, EMA20 ≈ EMA50)",
-                    technical_indicators={"rsi": 52.0, "ema20": 582.4, "ema50": 585.1, "support": 560, "resistance": 610, "trend": "عرضي", "volume_ratio": 1.1, "price_change_pct": 0, "current_price": 583.20},
-                    created_at=datetime.now(timezone.utc),
-                ),
-                BotAnalysis(
-                    symbol="XRPUSDT", timeframe="1h",
-                    news_source=None, news_title=None, news_url=None,
-                    is_momentum_real=False, price_confirmed_news=None,
-                    decision="no_opportunity", confidence_score=20,
-                    reasoning="❌ زخم ضعيف (حجم التداول أقل من المتوسط بنسبة 72%)\n⚠️ لا يوجد خبر مؤثر للمقارنة\n⚠️ اتجاه عرضي — لا وضوح (RSI: 46, EMA20 ≈ EMA50)",
-                    technical_indicators={"rsi": 46.0, "ema20": 0.52, "ema50": 0.53, "support": 0.48, "resistance": 0.58, "trend": "عرضي", "volume_ratio": 0.72, "price_change_pct": 0, "current_price": 0.52},
-                    created_at=datetime.now(timezone.utc),
-                ),
-            ]
-            for a in demo_analyses:
-                db.add(a)
-            logger.info("✅ Demo analysis data seeded")
 
         await db.commit()
         logger.info("✅ Default data seeded")
@@ -329,6 +275,8 @@ async def lifespan(app: FastAPI):
                 ("max_loss_limit", "NUMERIC DEFAULT 500"),
                 ("min_confidence", "NUMERIC DEFAULT 40"),
                 ("signal_duration_multiplier", "NUMERIC DEFAULT 1.0"),
+                ("trade_size_pct", "NUMERIC DEFAULT 20"),
+                ("max_open_positions", "INTEGER DEFAULT 5"),
             ]:
                 if col_name not in columns:
                     try:
@@ -336,6 +284,42 @@ async def lifespan(app: FastAPI):
                         logger.info(f"✅ Added column {col_name} to {table_name}")
                     except Exception:
                         pass
+
+        # Migrate paper_holdings
+        try:
+            result = await conn.execute(text("PRAGMA table_info(paper_holdings)"))
+            columns = [row[1] for row in result.fetchall()]
+            for col_name, col_type in [
+                ("take_profit_price", "NUMERIC"),
+                ("stop_loss_price", "NUMERIC"),
+                ("signal_id", "VARCHAR(36)"),
+                ("entry_trade_id", "VARCHAR(36)"),
+            ]:
+                if col_name not in columns:
+                    try:
+                        await conn.execute(text(f"ALTER TABLE paper_holdings ADD COLUMN {col_name} {col_type}"))
+                        logger.info(f"✅ Added column {col_name} to paper_holdings")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # Migrate trade_signals
+        try:
+            result = await conn.execute(text("PRAGMA table_info(trade_signals)"))
+            columns = [row[1] for row in result.fetchall()]
+            for col_name, col_type in [
+                ("close_price", "NUMERIC"),
+                ("pnl_percentage", "NUMERIC"),
+            ]:
+                if col_name not in columns:
+                    try:
+                        await conn.execute(text(f"ALTER TABLE trade_signals ADD COLUMN {col_name} {col_type}"))
+                        logger.info(f"✅ Added column {col_name} to trade_signals")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     await seed_default_data()
 
@@ -352,13 +336,15 @@ async def lifespan(app: FastAPI):
         logger.info(f"🔌 WebSocket price stream started for {len(active_symbols)} symbols")
 
     # Start scheduler
-    scheduler.add_job(run_analysis_job, "interval", hours=1, id="analysis_job")
-    scheduler.add_job(run_paper_bot_job, "interval", minutes=10, id="paper_bot_job")
-    scheduler.add_job(run_signals_job, "interval", minutes=30, id="signals_job")
+    scheduler.add_job(run_analysis_job, "interval", minutes=30, id="analysis_job")
+    scheduler.add_job(run_price_monitor_job, "interval", seconds=5, id="price_monitor_job")
+    scheduler.add_job(run_paper_bot_job, "interval", minutes=1, id="paper_bot_job")
+    scheduler.add_job(run_signals_job, "interval", minutes=5, id="signals_job")
     scheduler.start()
     logger.info("⏰ Analysis scheduler started (every 1 hour)")
     logger.info("⏰ Paper bot scheduler started (every 10 minutes)")
     logger.info("⏰ Signal generator started (every 30 minutes)")
+    logger.info("⏰ Price monitor started (every 5 seconds)")
 
     yield
 

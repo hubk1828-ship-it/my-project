@@ -89,7 +89,7 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
 
             # Skip Gemini failures
             indicators = analysis.technical_indicators or {}
-            if indicators.get("gemini_status") == "failed":
+            if indicators.get("ai_status") == "failed":
                 continue
 
             current_price = indicators.get("current_price", 0)
@@ -98,6 +98,10 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
 
             confidence = float(analysis.confidence_score or 0)
             signal_type = "long" if analysis.decision == "buy" else "short"
+
+            # Filter: skip signals below minimum confidence threshold
+            if confidence < 70:
+                continue
 
             # Check for existing active signal
             existing = await db.execute(
@@ -189,7 +193,7 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
             indicators = analysis_result.get("technical_indicators", {})
             
             # Skip Gemini failures
-            if indicators.get("gemini_status") == "failed":
+            if indicators.get("ai_status") == "failed":
                 logger.warning(f"⚠️ Skipping {sym.symbol} — Gemini failed")
                 continue
 
@@ -197,6 +201,10 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
             signal_type = "long" if decision == "buy" else "short"
             current_price = indicators.get("current_price", 0)
             if current_price <= 0:
+                continue
+
+            # Filter: skip signals below minimum confidence
+            if confidence < 70:
                 continue
 
             # Duplicate check — no active signal for same symbol

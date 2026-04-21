@@ -25,6 +25,9 @@ class PaperHoldingResponse(BaseModel):
     asset: str
     quantity: float
     avg_buy_price: float
+    take_profit_price: Optional[float] = None
+    stop_loss_price: Optional[float] = None
+    signal_id: Optional[str] = None
     class Config:
         from_attributes = True
 
@@ -71,6 +74,8 @@ class PaperBotSettingsResponse(BaseModel):
     max_loss_limit: float
     min_confidence: float
     signal_duration_multiplier: float
+    trade_size_pct: float = 20
+    max_open_positions: int = 5
     updated_at: Optional[datetime] = None
     class Config:
         from_attributes = True
@@ -85,6 +90,8 @@ class PaperBotSettingsUpdate(BaseModel):
     max_loss_limit: Optional[float] = None
     min_confidence: Optional[float] = None
     signal_duration_multiplier: Optional[float] = None
+    trade_size_pct: Optional[float] = None
+    max_open_positions: Optional[int] = None
 
 
 # ===== Trade Signals =====
@@ -107,5 +114,7 @@ class TradeSignalResponse(BaseModel):
     created_at: datetime
     expires_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
+    close_price: Optional[float] = None
+    pnl_percentage: Optional[float] = None
     class Config:
         from_attributes = True

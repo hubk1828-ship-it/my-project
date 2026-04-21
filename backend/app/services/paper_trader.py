@@ -128,10 +128,9 @@ async def execute_paper_trade(
 
 
 async def run_paper_bot_cycle(db: AsyncSession):
-    """Run paper bot for all enabled users — auto-trade based on active signals."""
+    """Run paper bot — target-based trading. Sells only on TP/SL hit."""
     from app.models.paper_trading import TradeSignal
-    from app.models.trade import SupportedSymbol
-    from app.services.signal_generator import generate_signals_live, update_signal_statuses
+    from app.services.binance_client import _price_cache
 
     result = await db.execute(
         select(PaperBotSettings).where(PaperBotSettings.is_enabled == True)
@@ -139,17 +138,12 @@ async def run_paper_bot_cycle(db: AsyncSession):
     enabled_settings = result.scalars().all()
 
     if not enabled_settings:
-        logger.info("📄 Paper bot: لا يوجد مستخدمين مفعّلين")
         return
 
-    # First: update signal statuses (close expired/hit targets)
-    await update_signal_statuses(db)
-
     for settings in enabled_settings:
-        user_min_confidence = float(settings.min_confidence)
         cycle_log = []
 
-        # Get user's paper wallet
+        # Get wallet
         w_result = await db.execute(
             select(PaperWallet).where(
                 PaperWallet.user_id == settings.user_id,
@@ -158,114 +152,169 @@ async def run_paper_bot_cycle(db: AsyncSession):
         )
         wallet = w_result.scalar_one_or_none()
         if not wallet:
-            cycle_log.append("⛔ لا توجد محفظة وهمية نشطة")
-            logger.info(f"🤖 دورة بوت [{settings.user_id[:8]}]: {' | '.join(cycle_log)}")
             continue
 
-        # Check daily trade count
-        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        count_result = await db.execute(
-            select(func.count(PaperTrade.id)).where(
-                PaperTrade.user_id == settings.user_id,
-                PaperTrade.executed_by == "paper_bot",
-                PaperTrade.created_at >= today_start,
-            )
-        )
-        today_trades = count_result.scalar() or 0
-        if today_trades >= settings.max_trades_per_day:
-            cycle_log.append(f"⛔ تم الوصول للحد اليومي: {today_trades}/{settings.max_trades_per_day}")
-            logger.info(f"🤖 دورة بوت [{settings.user_id[:8]}]: {' | '.join(cycle_log)}")
-            continue
-
-        # Auto-sell holdings that hit target or stop — based on closed signals
+        # ═══════════════════════════════════════
+        # 1️⃣ CHECK OPEN POSITIONS — TP/SL EXIT
+        # ═══════════════════════════════════════
         h_result = await db.execute(
             select(PaperHolding).where(PaperHolding.wallet_id == wallet.id)
         )
         holdings = h_result.scalars().all()
         sell_count = 0
+
         for holding in holdings:
-            if float(holding.quantity) <= 0:
+            qty = float(holding.quantity)
+            if qty <= 0:
                 continue
-            # Check if signal for this symbol was closed (hit_target/stopped/expired)
-            sig_result = await db.execute(
-                select(TradeSignal).where(
-                    TradeSignal.symbol == holding.symbol,
-                    TradeSignal.status.in_(["hit_target", "stopped", "expired"]),
-                ).order_by(TradeSignal.closed_at.desc()).limit(1)
-            )
-            closed_signal = sig_result.scalar_one_or_none()
-            if closed_signal and closed_signal.closed_at:
-                # Check if closed recently (within last 10 minutes)
-                closed_time = closed_signal.closed_at
-                if hasattr(closed_time, 'tzinfo') and closed_time.tzinfo is None:
-                    closed_time = closed_time.replace(tzinfo=timezone.utc)
-                if (datetime.now(timezone.utc) - closed_time).total_seconds() < 600:
-                    sell_amount = float(holding.quantity) * float(
-                        (await get_prices_batch([holding.symbol])).get(holding.symbol, 0)
+
+            # Get current price from WebSocket cache
+            import time as _time
+            cached = _price_cache.get(holding.symbol)
+            if not cached:
+                prices = await get_prices_batch([holding.symbol])
+                current_price = prices.get(holding.symbol, 0)
+            else:
+                price_val, ts = cached
+                current_price = price_val if (_time.time() - ts) < 60 else 0
+
+            if current_price <= 0:
+                continue
+
+            tp = float(holding.take_profit_price or 0)
+            sl = float(holding.stop_loss_price or 0)
+            entry = float(holding.avg_buy_price)
+            sell_reason = None
+
+            # Check TP/SL
+            if tp > 0 and current_price >= tp:
+                sell_reason = "take_profit"
+            elif sl > 0 and current_price <= sl:
+                sell_reason = "stop_loss"
+
+            if sell_reason:
+                sell_amount = qty * current_price
+                pnl = (current_price - entry) * qty
+                result = await execute_paper_trade(
+                    user_id=settings.user_id, wallet=wallet,
+                    symbol=holding.symbol, side="sell",
+                    amount_usdt=sell_amount, db=db,
+                    executed_by="paper_bot",
+                )
+                if result.get("success"):
+                    sell_count += 1
+                    emoji = "✅" if sell_reason == "take_profit" else "🛑"
+                    logger.info(
+                        f"{emoji} {holding.symbol} {sell_reason} | "
+                        f"entry=${entry:.2f} exit=${current_price:.2f} PnL=${pnl:+.2f}"
                     )
-                    if sell_amount > 0:
-                        await execute_paper_trade(
-                            user_id=settings.user_id, wallet=wallet,
-                            symbol=holding.symbol, side="sell",
-                            amount_usdt=sell_amount, db=db,
-                            executed_by="paper_bot",
-                        )
-                        sell_count += 1
-                        logger.info(f"🤖 Auto-sell {holding.symbol} ({closed_signal.status})")
 
         if sell_count > 0:
-            cycle_log.append(f"💰 {sell_count} صفقة بيع تلقائية")
+            cycle_log.append(f"💰 {sell_count} sold (TP/SL)")
 
-        # Auto-buy from active signals (Long + Short)
-        sig_result = await db.execute(
-            select(TradeSignal).where(
-                TradeSignal.status == "active",
-                TradeSignal.signal_type.in_(["long", "short"]),
-                TradeSignal.confidence >= user_min_confidence,
+        # ═══════════════════════════════════════
+        # 2️⃣ FIND NEW OPPORTUNITIES — BUY
+        # ═══════════════════════════════════════
+
+        # Count open positions
+        open_result = await db.execute(
+            select(func.count(PaperHolding.id)).where(
+                PaperHolding.wallet_id == wallet.id,
+                PaperHolding.quantity > 0,
             )
         )
-        active_signals = sig_result.scalars().all()
-        cycle_log.append(f"📊 {len(active_signals)} إشارة نشطة (ثقة >= {user_min_confidence}%)")
+        open_positions = open_result.scalar() or 0
+        max_positions = int(getattr(settings, 'max_open_positions', 5) or 5)
 
-        buy_count = 0
-        skip_count = 0
-        for signal in active_signals:
-            # Check if already holding this symbol
-            existing = await db.execute(
-                select(PaperHolding).where(
-                    PaperHolding.wallet_id == wallet.id,
-                    PaperHolding.symbol == signal.symbol,
+        if open_positions >= max_positions:
+            cycle_log.append(f"⛔ max positions ({open_positions}/{max_positions})")
+        else:
+            # Get active signals
+            user_min_conf = float(settings.min_confidence or 40)
+            sig_result = await db.execute(
+                select(TradeSignal).where(
+                    TradeSignal.status == "active",
+                    TradeSignal.signal_type.in_(["long", "short"]),
+                    TradeSignal.confidence >= min(user_min_conf, 70),
                 )
             )
-            if existing.scalar_one_or_none():
-                skip_count += 1
-                continue  # Already holding
+            active_signals = sig_result.scalars().all()
 
-            trade_amount = min(
-                float(settings.max_trade_amount),
-                float(wallet.current_balance) * float(settings.max_portfolio_percentage) / 100,
-            )
-            if trade_amount < 5:
-                cycle_log.append(f"⛔ {signal.symbol}: رصيد غير كافٍ (${trade_amount:.2f})")
-                continue
+            buy_count = 0
+            for signal in active_signals:
+                if open_positions + buy_count >= max_positions:
+                    break
 
-            await execute_paper_trade(
-                user_id=settings.user_id, wallet=wallet,
-                symbol=signal.symbol, side="buy",
-                amount_usdt=trade_amount, db=db,
-                executed_by="paper_bot",
-            )
-            buy_count += 1
-            logger.info(f"🤖 Auto-buy {signal.symbol} ({signal.signal_type}, ثقة: {signal.confidence}%)")
+                # Already holding?
+                existing = await db.execute(
+                    select(PaperHolding).where(
+                        PaperHolding.wallet_id == wallet.id,
+                        PaperHolding.symbol == signal.symbol,
+                        PaperHolding.quantity > 0,
+                    )
+                )
+                if existing.scalar_one_or_none():
+                    continue
 
-        if buy_count > 0:
-            cycle_log.append(f"✅ {buy_count} صفقة شراء")
-        if skip_count > 0:
-            cycle_log.append(f"⏭️ {skip_count} تم تخطيها (موجودة مسبقاً)")
-        if buy_count == 0 and sell_count == 0:
-            cycle_log.append("➖ لا صفقات جديدة")
+                # Check daily limit PER TRADE
+                today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+                count_result = await db.execute(
+                    select(func.count(PaperTrade.id)).where(
+                        PaperTrade.user_id == settings.user_id,
+                        PaperTrade.executed_by == "paper_bot",
+                        PaperTrade.created_at >= today_start,
+                    )
+                )
+                today_trades = count_result.scalar() or 0
+                if today_trades >= settings.max_trades_per_day:
+                    cycle_log.append(f"⛔ daily limit {today_trades}/{settings.max_trades_per_day}")
+                    break
 
-        logger.info(f"🤖 دورة بوت [{settings.user_id[:8]}]: {' | '.join(cycle_log)}")
+                # Calculate trade amount
+                trade_size = float(getattr(settings, 'trade_size_pct', 20) or 20)
+                trade_amount = min(
+                    float(wallet.current_balance) * trade_size / 100,
+                    float(settings.max_trade_amount),
+                    float(wallet.current_balance) * 0.95,
+                )
+                if trade_amount < 5:
+                    continue
+
+                # Execute buy
+                result = await execute_paper_trade(
+                    user_id=settings.user_id, wallet=wallet,
+                    symbol=signal.symbol, side="buy",
+                    amount_usdt=trade_amount, db=db,
+                    executed_by="paper_bot",
+                )
+                if result.get("success"):
+                    # Set TP/SL from signal on the holding
+                    h_res = await db.execute(
+                        select(PaperHolding).where(
+                            PaperHolding.wallet_id == wallet.id,
+                            PaperHolding.symbol == signal.symbol,
+                        )
+                    )
+                    new_holding = h_res.scalar_one_or_none()
+                    if new_holding:
+                        new_holding.take_profit_price = float(signal.target_1 or 0)
+                        new_holding.stop_loss_price = float(signal.stop_loss or 0)
+                        new_holding.signal_id = signal.id
+                        new_holding.entry_trade_id = result.get("trade_id")
+
+                    buy_count += 1
+                    logger.info(
+                        f"🤖 BUY {signal.symbol} ${trade_amount:.0f} | "
+                        f"TP=${float(signal.target_1 or 0):.2f} SL=${float(signal.stop_loss or 0):.2f} "
+                        f"conf={signal.confidence}%"
+                    )
+
+            if buy_count > 0:
+                cycle_log.append(f"✅ {buy_count} bought")
+            if buy_count == 0 and sell_count == 0:
+                cycle_log.append("➖ no trades")
+
+        if cycle_log:
+            logger.info(f"🤖 bot [{settings.user_id[:8]}]: {' | '.join(cycle_log)}")
 
     await db.commit()
-    logger.info("✅ Paper bot cycle complete")

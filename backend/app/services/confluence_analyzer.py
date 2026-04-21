@@ -1,7 +1,6 @@
 """
 Confluence Analyzer — AI-Powered Analysis Engine
-Uses Google Gemini AI with real Binance data for 6-layer analysis.
-Fallback to classic analyzer if Gemini fails.
+Uses Groq AI (primary) + Google Gemini AI (fallback) with real Binance data for 6-layer analysis.
 """
 
 import json
@@ -22,6 +21,20 @@ settings = get_settings()
 logger = logging.getLogger("confluence")
 
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+# Gemini daily usage tracking
+_daily_gemini_calls = 0
+_gemini_day = None
+
+
+def _track_gemini_call():
+    global _daily_gemini_calls, _gemini_day
+    today = datetime.now(timezone.utc).date()
+    if _gemini_day != today:
+        _daily_gemini_calls = 0
+        _gemini_day = today
+    _daily_gemini_calls += 1
 
 
 # ===== Data Collection =====
@@ -252,87 +265,87 @@ EMA20: {info['ema20']} | EMA50: {info['ema50']}
     oi_text = f"{data['open_interest']['oi']:.2f}" if data['open_interest'] else "غير متوفر"
     fng = data['fear_greed']
 
-    prompt = f"""أنت محلل مالي واقتصادي وخبير في التحليل الفني بخبرة 20 عاماً.
-مهمتك تحليل {symbol} وإعطاء توصية عالية الجودة فقط.
+    prompt = f"""You are an expert financial analyst with 20 years experience.
+Analyze {symbol} and provide a high-quality recommendation. Write summary/reasoning in Arabic.
 
 ═══════════════════════════════════════
-البيانات الحقيقية — {symbol}
+REAL DATA — {symbol}
 ═══════════════════════════════════════
-السعر الحالي: {data['current_price']}
-التغير 24h: {data['change_24h_pct']}%
-حجم التداول 24h: {data['volume_24h']:,.0f} USDT
-أعلى 24h: {data['high_24h']} | أدنى 24h: {data['low_24h']}
+Price: {data['current_price']}
+Change 24h: {data['change_24h_pct']}%
+Volume 24h: {data['volume_24h']:,.0f} USDT
+High 24h: {data['high_24h']} | Low 24h: {data['low_24h']}
 Funding Rate: {funding_text}
 Open Interest: {oi_text}
-مؤشر الخوف والطمع: {fng['value']} ({fng['label']})
+Fear & Greed: {fng['value']} ({fng['label']})
 
 ═══════════════════════════════════════
-بيانات الشارت (4 فريمات)
+CHART DATA (4 timeframes)
 ═══════════════════════════════════════
 {klines_section}
 
 ═══════════════════════════════════════
-المطلوب — نظام Confluence Scoring
+CONFLUENCE SCORING SYSTEM
 ═══════════════════════════════════════
 
-حلل البيانات أعلاه واحسب النقاط بدقة:
+Calculate points precisely:
 
-الماكرو والمعنويات (30 نقطة):
-- الاتجاه الكلي مواتٍ: +10
-- Fear & Greed يدعم الاتجاه: +10  (الحالي: {fng['value']})
-- لا أخبار سلبية كبرى: +10
+Macro & Sentiment (30 pts):
+- Overall trend favorable: +10
+- Fear & Greed supports direction: +10  (current: {fng['value']})
+- No major negative news: +10
 
-السيولة (25 نقطة):
-- السعر قرب منطقة سيولة قوية: +10
-- Funding Rate محايد أو يدعم: +8 (الحالي: {funding_text})
-- Open Interest يتزايد مع الحركة: +7
+Liquidity (25 pts):
+- Price near strong liquidity zone: +10
+- Funding Rate neutral or supportive: +8 (current: {funding_text})
+- Open Interest growing with movement: +7
 
-التحليل الفني (45 نقطة):
-- اتفاق 3+ فريمات على نفس الاتجاه: +15
-- Order Block أو FVG واضح: +12
-- مؤشرات كلاسيكية تؤكد: +10
-- نمط واضح وموثوق: +8
+Technical (45 pts):
+- 3+ timeframes agree: +15
+- Order Block أو FVG clear: +12
+- Classic indicators confirm: +10
+- Clear reliable pattern: +8
 
-القرار:
-- أقل من 70 → لا توصية
-- 70-84 → مراقبة فقط
-- 85-100 → توصية
+Decision:
+- <70 = no recommendation
+- 70-84 = watch only
+- >=85 = recommendation
 
-القواعد الصارمة:
-1. لا توصية إذا النقاط أقل من 85
-2. لا توصية إذا الفريمات متعارضة
-3. وقف الخسارة إلزامي
-4. نسبة R:R لا تقل عن 1:2
-5. إذا شككت، قل "لا توجد فرصة"
+STRICT RULES:
+1. No recommendation if score < 85
+2. No recommendation if timeframes conflict
+3. Stop loss mandatory
+4. R:R لا تقل عن 1:2
+5. If uncertain = "no opportunity"
 
 ═══════════════════════════════════════
-أجب بـ JSON فقط (بدون أي نص آخر):
+RESPOND WITH JSON ONLY:
 ═══════════════════════════════════════
 
 {{
-  "confluence_score": <رقم من 0-100>,
+  "confluence_score": <0-100>,
   "direction": "<long أو short أو none>",
-  "entry_price": "<سعر الدخول>",
-  "tp1": "<هدف 1>",
-  "tp2": "<هدف 2>",
-  "tp3": "<هدف 3>",
-  "stop_loss": "<وقف الخسارة>",
-  "risk_reward": "<نسبة R:R>",
-  "timeframe": "<الفريم الأساسي>",
-  "duration_minutes": <مدة الصفقة بالدقائق>,
+  "entry_price": "<entry>",
+  "tp1": "<target1>",
+  "tp2": "<target2>",
+  "tp3": "<target3>",
+  "stop_loss": "<stop loss>",
+  "risk_reward": "<R:R>",
+  "timeframe": "<primary timeframe>",
+  "duration_minutes": <duration mins>,
   "macro_score": <نقاط الماكرو من 30>,
   "liquidity_score": <نقاط السيولة من 25>,
   "technical_score": <نقاط التحليل الفني من 45>,
-  "summary": "<ملخص التحليل بالعربي>",
-  "key_factors": ["<عامل 1>", "<عامل 2>"],
-  "risks": ["<خطر 1>", "<خطر 2>"]
+  "summary": "<summary IN ARABIC>",
+  "key_factors": ["<factor1 IN ARABIC>", "<factor2>"],
+  "risks": ["<risk1 IN ARABIC>", "<risk2>"]
 }}
 
-إذا النقاط أقل من 85، أرجع:
+If score < 55:
 {{
   "confluence_score": <النقاط>,
   "direction": "none",
-  "summary": "<سبب عدم التوصية بالعربي>",
+  "summary": "<reason IN ARABIC>",
   "macro_score": <>,
   "liquidity_score": <>,
   "technical_score": <>
@@ -341,13 +354,15 @@ Open Interest: {oi_text}
     return prompt
 
 
-# ===== Gemini AI Call =====
+# ===== AI Call Functions =====
 
 async def call_gemini(prompt: str) -> Optional[Dict]:
     """Call Gemini AI via REST API and parse JSON response."""
     if not settings.GEMINI_API_KEY:
         logger.warning("No Gemini API key configured")
         return None
+
+    _track_gemini_call()
 
     try:
         async with httpx.AsyncClient() as client:
@@ -357,12 +372,16 @@ async def call_gemini(prompt: str) -> Optional[Dict]:
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {
                         "temperature": 0.3,
-                        "maxOutputTokens": 2000,
+                        "maxOutputTokens": 1200,
                     },
                 },
                 timeout=60,
                 headers={"Content-Type": "application/json"},
             )
+
+            if resp.status_code == 429:
+                logger.warning(f"⚠️🔑 Gemini 429! Quota exhausted! Change API key! Usage today: {_daily_gemini_calls}")
+                return None
 
             if resp.status_code != 200:
                 logger.error(f"Gemini API {resp.status_code}: {resp.text[:300]}")
@@ -384,6 +403,58 @@ async def call_gemini(prompt: str) -> Optional[Dict]:
         return None
 
 
+async def call_groq(prompt: str) -> Optional[Dict]:
+    """Call Groq API (fallback — 14,400 req/day free)."""
+    groq_key = getattr(settings, 'GROQ_API_KEY', '')
+    if not groq_key:
+        return None
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                GROQ_API_URL,
+                json={
+                    "model": "llama-3.1-8b-instant",
+                    "messages": [
+                        {"role": "system", "content": "You are a crypto analyst. Reply ONLY with valid JSON."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 1200,
+                },
+                timeout=30,
+                headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+            )
+            if resp.status_code == 429:
+                logger.warning(f"Groq 429 on primary model, trying gemma2-9b-it...")
+                resp = await client.post(
+                    GROQ_API_URL,
+                    json={
+                        "model": "gemma2-9b-it",
+                        "messages": [
+                            {"role": "system", "content": "You are a crypto analyst. Reply ONLY with valid JSON."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "temperature": 0.3,
+                        "max_tokens": 1200,
+                    },
+                    timeout=30,
+                    headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                )
+            if resp.status_code != 200:
+                logger.error(f"Groq API {resp.status_code}: {resp.text[:200]}")
+                return None
+            data = resp.json()
+            text = data["choices"][0]["message"]["content"].strip()
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if json_match:
+                return json.loads(json_match.group())
+            logger.warning(f"Could not parse Groq response: {text[:200]}")
+            return None
+    except Exception as e:
+        logger.error(f"Groq API error: {e}")
+        return None
+
+
 # ===== Main Analysis Function =====
 
 async def analyze_symbol_confluence(symbol: str, base_asset: str) -> Dict:
@@ -397,14 +468,23 @@ async def analyze_symbol_confluence(symbol: str, base_asset: str) -> Dict:
         logger.warning(f"No price data for {symbol}, falling back")
         return _fallback_result(symbol)
 
-    # Step 2: Build prompt and call Gemini (with rate limit pause)
-    await asyncio.sleep(5)  # Respect Gemini rate limits
+    # Step 2: Build prompt and call AI
     prompt = build_analysis_prompt(symbol, data)
-    result = await call_gemini(prompt)
+    # Groq PRIMARY (14,400 req/day, fast)
+    groq_key = getattr(settings, "GROQ_API_KEY", "")
+    result = None
+    if groq_key:
+        result = await call_groq(prompt)
+        if result:
+            logger.info(f"✅ Groq OK for {symbol}")
+
+    # Gemini FALLBACK
+    if not result:
+        logger.info(f"Groq failed, trying Gemini for {symbol}...")
+        result = await call_gemini(prompt)
 
     if not result:
-        # Gemini failed — DO NOT fallback to classic analyzer (could harm trades)
-        logger.error(f"🚨 Gemini failed for {symbol} — NO fallback, returning failure")
+        logger.error(f"🚨 All AI failed for {symbol}")
         return _gemini_failure_result(symbol, data.get("current_price", 0))
 
     # Step 3: Parse result — show Gemini's direction as-is
@@ -427,7 +507,7 @@ async def analyze_symbol_confluence(symbol: str, base_asset: str) -> Dict:
         "reasoning": _build_reasoning(result, data),
         "is_momentum_real": score >= 70,
         "price_confirmed_news": None,
-        "news_source": "Gemini AI Confluence",
+        "news_source": "AI Confluence",
         "news_title": result.get("summary", ""),
         "news_url": None,
         "technical_indicators": {
@@ -468,7 +548,7 @@ def _build_reasoning(result: Dict, data: Dict) -> str:
     direction = result.get("direction", "none")
 
     lines.append(f"📊 نقاط Confluence: {score}/100")
-    lines.append(f"🎯 الاتجاه: {'صعود' if direction == 'long' else 'هبوط' if direction == 'short' else 'لا توجد فرصة'}")
+    lines.append(f"🎯 Trend: {'صعود' if direction == 'long' else 'هبوط' if direction == 'short' else 'لا توجد فرصة'}")
     lines.append(f"")
     lines.append(f"الماكرو: {result.get('macro_score', 0)}/30 | السيولة: {result.get('liquidity_score', 0)}/25 | الفني: {result.get('technical_score', 0)}/45")
     lines.append(f"")
@@ -524,19 +604,19 @@ def _fallback_result(symbol: str) -> Dict:
 
 
 def _gemini_failure_result(symbol: str, current_price: float = 0) -> Dict:
-    """Return a clear failure result when Gemini is down — NO fallback to classic."""
+    """Return a clear failure result when all AI providers are down — NO fallback to classic."""
     return {
         "symbol": symbol,
         "decision": "no_opportunity",
         "confidence_score": 0,
-        "reasoning": "🚨 تعطّل Gemini AI — لم يتم التحليل\n⚠️ لا يوجد fallback — التداول متوقف حتى يعود Gemini\n🔧 تحقق من مفتاح API أو حالة الخدمة",
+        "reasoning": f"🚨 تعطّل الذكاء الاصطناعي\n⚠️🔑 بدّل مفتاح Gemini! استخدام اليوم: {_daily_gemini_calls} طلب\n🔧 https://aistudio.google.com/apikey",
         "is_momentum_real": None,
         "price_confirmed_news": None,
-        "news_source": "Gemini AI (FAILED)",
-        "news_title": "🚨 Gemini AI متعطل",
+        "news_source": "AI (FAILED)",
+        "news_title": "🚨 AI متعطل",
         "news_url": None,
         "technical_indicators": {
             "current_price": current_price,
-            "gemini_status": "failed",
+            "ai_status": "failed",
         },
     }

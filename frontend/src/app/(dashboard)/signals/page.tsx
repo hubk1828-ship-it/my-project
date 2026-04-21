@@ -108,12 +108,25 @@ function SignalsPageContent() {
     return () => clearInterval(interval);
   }, [fetchSignals]);
 
+  const [countdown, setCountdown] = useState("");
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const n = new Date(), m = n.getMinutes(), s = n.getSeconds();
+      const next = m < 30 ? 30 - m : 60 - m;
+      const rs = 60 - s;
+      setCountdown((next-1) + ":" + (rs < 10 ? "0" : "") + (rs === 60 ? "00" : String(rs)));
+    }, 1000);
+    return () => clearInterval(iv);
+  }, []);
+
   async function handleGenerate() {
     setGenerating(true); setGenResult("");
     try {
+      await paperApi.resetSignals();
+      setSignals([]);
       const { data } = await paperApi.generateSignals(timeframe);
       setGenResult(data.message);
-      fetchSignals(); // fetches all signals — server keeps active ones
+      fetchSignals();
     } catch (e: any) {
       setGenResult("❌ " + (e.response?.data?.detail || "فشل التوليد"));
     } finally { setGenerating(false); }

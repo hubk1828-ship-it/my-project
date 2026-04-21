@@ -37,6 +37,10 @@ class PaperHolding(Base):
     asset: Mapped[str] = mapped_column(String(10), nullable=False)
     quantity: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False, default=0)
     avg_buy_price: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False, default=0)
+    take_profit_price: Mapped[float] = mapped_column(Numeric(20, 8), nullable=True)
+    stop_loss_price: Mapped[float] = mapped_column(Numeric(20, 8), nullable=True)
+    signal_id: Mapped[str] = mapped_column(String(36), nullable=True)
+    entry_trade_id: Mapped[str] = mapped_column(String(36), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     wallet = relationship("PaperWallet", back_populates="holdings")
@@ -79,6 +83,8 @@ class PaperBotSettings(Base):
     max_loss_limit: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False, default=500)
     min_confidence: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=40)
     signal_duration_multiplier: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=1.0)
+    trade_size_pct: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=20)
+    max_open_positions: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="paper_bot_settings")
@@ -105,3 +111,5 @@ class TradeSignal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    close_price: Mapped[float] = mapped_column(Numeric(20, 8), nullable=True)
+    pnl_percentage: Mapped[float] = mapped_column(Numeric(10, 4), nullable=True)
