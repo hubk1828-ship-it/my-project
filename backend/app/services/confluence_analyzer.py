@@ -181,60 +181,51 @@ def _summarize_klines(klines: List[Dict], label: str) -> Dict:
     if not klines or len(klines) < 5:
         return {"error": "insufficient data"}
 
+    from app.services.math_engine import compute_all_indicators, compute_confluence_score
+
     closes = [k["close"] for k in klines]
     highs = [k["high"] for k in klines]
     lows = [k["low"] for k in klines]
     volumes = [k["volume"] for k in klines]
 
-    # Simple indicators
-    import numpy as np
-    closes_arr = np.array(closes)
+    indicators = compute_all_indicators(closes, highs, lows, volumes)
+    confluence = compute_confluence_score(indicators)
 
-    # RSI
-    deltas = np.diff(closes_arr)
-    gains = np.where(deltas > 0, deltas, 0)
-    losses = np.where(deltas < 0, -deltas, 0)
-    avg_gain = np.mean(gains[-14:]) if len(gains) >= 14 else np.mean(gains)
-    avg_loss = np.mean(losses[-14:]) if len(losses) >= 14 else np.mean(losses)
-    rsi = 100 - (100 / (1 + avg_gain / avg_loss)) if avg_loss > 0 else 50
-
-    # EMAs
-    ema20 = float(np.mean(closes_arr[-20:])) if len(closes) >= 20 else float(closes_arr[-1])
-    ema50 = float(np.mean(closes_arr[-50:])) if len(closes) >= 50 else float(closes_arr[-1])
-
-    # Recent candles (last 10 as OHLCV)
-    recent = klines[-10:]
+    recent = klines[-3:]
     recent_summary = [
         f"O:{k['open']:.2f} H:{k['high']:.2f} L:{k['low']:.2f} C:{k['close']:.2f} V:{k['volume']:.0f}"
         for k in recent
     ]
 
-    # Support/Resistance
-    support = float(min(lows[-20:])) if len(lows) >= 20 else float(min(lows))
-    resistance = float(max(highs[-20:])) if len(highs) >= 20 else float(max(highs))
-
-    # Trend
-    if len(closes) >= 20:
-        short_ma = np.mean(closes_arr[-10:])
-        long_ma = np.mean(closes_arr[-20:])
-        trend = "صاعد" if short_ma > long_ma else "هابط" if short_ma < long_ma else "عرضي"
-    else:
-        trend = "غير محدد"
-
-    # Volume trend
-    vol_recent = np.mean(volumes[-5:])
-    vol_avg = np.mean(volumes)
-    vol_ratio = vol_recent / vol_avg if vol_avg > 0 else 1
-
     return {
         "timeframe": label,
-        "rsi": round(rsi, 1),
-        "ema20": round(ema20, 2),
-        "ema50": round(ema50, 2),
-        "support": round(support, 2),
-        "resistance": round(resistance, 2),
-        "trend": trend,
-        "volume_ratio": round(vol_ratio, 2),
+        "rsi": indicators["rsi"],
+        "ema20": round(indicators["ema20"], 2),
+        "ema50": round(indicators["ema50"], 2),
+        "ema9": round(indicators["ema9"], 2),
+        "ema21": round(indicators["ema21"], 2),
+        "atr": indicators["atr"],
+        "atr_pct": indicators["atr_pct"],
+        "macd": indicators["macd"],
+        "macd_signal": indicators["macd_signal"],
+        "macd_histogram": indicators["macd_histogram"],
+        "bb_upper": indicators["bb_upper"],
+        "bb_middle": indicators["bb_middle"],
+        "bb_lower": indicators["bb_lower"],
+        "bb_pct_b": indicators["bb_pct_b"],
+        "stoch_k": indicators["stoch_k"],
+        "stoch_d": indicators["stoch_d"],
+        "support": indicators["support"],
+        "resistance": indicators["resistance"],
+        "vwap": indicators["vwap"],
+        "trend": indicators["trend"],
+        "trend_strength": indicators["trend_strength"],
+        "volume_ratio": indicators["volume_ratio"],
+        "fib_retracement": indicators.get("fib_retracement", {}),
+        "swing_high": indicators.get("swing_high", 0),
+        "swing_low": indicators.get("swing_low", 0),
+        "math_score": confluence["score"],
+        "math_direction": confluence["direction"],
         "current_close": round(closes[-1], 2),
         "recent_candles": recent_summary,
     }
@@ -252,105 +243,72 @@ def build_analysis_prompt(symbol: str, data: Dict) -> str:
             continue
         klines_section += f"""
 --- {info['timeframe']} ---
-الاتجاه: {info['trend']}
-RSI(14): {info['rsi']}
-EMA20: {info['ema20']} | EMA50: {info['ema50']}
-دعم: {info['support']} | مقاومة: {info['resistance']}
-نسبة الحجم (حديث/متوسط): {info['volume_ratio']}
-آخر 10 شموع:
+Trend: {info['trend']} (strength: {info.get('trend_strength', 0)})
+RSI(Wilder): {info['rsi']} | StochRSI: K={info.get('stoch_k','?')} D={info.get('stoch_d','?')}
+EMA9: {info.get('ema9','?')} | EMA21: {info.get('ema21','?')} | EMA50: {info['ema50']}
+MACD: {info.get('macd','?')} | Signal: {info.get('macd_signal','?')} | Hist: {info.get('macd_histogram','?')}
+Bollinger: U={info.get('bb_upper','?')} M={info.get('bb_middle','?')} L={info.get('bb_lower','?')} %B={info.get('bb_pct_b','?')}
+ATR(14): {info.get('atr','?')} ({info.get('atr_pct','?')}%)
+Support: {info['support']} | Resistance: {info['resistance']} | VWAP: {info.get('vwap','?')}
+Fib 0.618: {info.get('fib_retracement',{}).get(0.618,'?')} | Fib 0.382: {info.get('fib_retracement',{}).get(0.382,'?')}
+Math Score: {info.get('math_score',0)}/100 -> {info.get('math_direction','?')}
+Vol ratio: {info['volume_ratio']} | Last candles:
 {chr(10).join(info['recent_candles'])}
 """
 
-    funding_text = f"{data['funding_rate']:.6f}" if data['funding_rate'] is not None else "غير متوفر"
-    oi_text = f"{data['open_interest']['oi']:.2f}" if data['open_interest'] else "غير متوفر"
+    funding_text = f"{data['funding_rate']:.6f}" if data['funding_rate'] is not None else "N/A"
+    oi_text = f"{data['open_interest']['oi']:.2f}" if data['open_interest'] else "N/A"
     fng = data['fear_greed']
 
-    prompt = f"""You are an expert financial analyst with 20 years experience.
-Analyze {symbol} and provide a high-quality recommendation. Write summary/reasoning in Arabic.
+    math_scores = []
+    for tf_key, tf_data in data["klines"].items():
+        if "error" not in tf_data:
+            math_scores.append(tf_data.get("math_score", 0))
+    avg_math_score = round(sum(math_scores) / len(math_scores), 1) if math_scores else 0
 
-═══════════════════════════════════════
-REAL DATA — {symbol}
-═══════════════════════════════════════
-Price: {data['current_price']}
-Change 24h: {data['change_24h_pct']}%
-Volume 24h: {data['volume_24h']:,.0f} USDT
-High 24h: {data['high_24h']} | Low 24h: {data['low_24h']}
-Funding Rate: {funding_text}
-Open Interest: {oi_text}
-Fear & Greed: {fng['value']} ({fng['label']})
+    prompt = f"""You are an expert financial analyst. VALIDATE or ADJUST the pre-computed math score.
+Write summary in Arabic.
 
-═══════════════════════════════════════
-CHART DATA (4 timeframes)
-═══════════════════════════════════════
+== {symbol} REAL-TIME ==
+Price: {data['current_price']} | 24h: {data['change_24h_pct']}%
+Volume: {data['volume_24h']:,.0f} USDT | H: {data['high_24h']} L: {data['low_24h']}
+Funding: {funding_text} | OI: {oi_text}
+Fear&Greed: {fng['value']} ({fng['label']})
+
+== PRE-COMPUTED MATH INDICATORS ==
 {klines_section}
 
-═══════════════════════════════════════
-CONFLUENCE SCORING SYSTEM
-═══════════════════════════════════════
+== MATH CONFLUENCE SCORE: {avg_math_score}/100 ==
 
-Calculate points precisely:
+YOUR TASK:
+1. Review math indicators (RSI Wilder, EMA, MACD, Bollinger, Fibonacci, VWAP)
+2. Consider macro factors: FOMC, geopolitics, whale movements
+3. CONFIRM or ADJUST score (+-20 max) with justification
+4. Provide entry/targets/stop based on ATR and Fibonacci
 
-Macro & Sentiment (30 pts):
-- Overall trend favorable: +10
-- Fear & Greed supports direction: +10  (current: {fng['value']})
-- No major negative news: +10
-
-Liquidity (25 pts):
-- Price near strong liquidity zone: +10
-- Funding Rate neutral or supportive: +8 (current: {funding_text})
-- Open Interest growing with movement: +7
-
-Technical (45 pts):
-- 3+ timeframes agree: +15
-- Order Block أو FVG clear: +12
-- Classic indicators confirm: +10
-- Clear reliable pattern: +8
-
-Decision:
-- <70 = no recommendation
-- 70-84 = watch only
-- >=85 = recommendation
-
-STRICT RULES:
-1. No recommendation if score < 85
-2. No recommendation if timeframes conflict
-3. Stop loss mandatory
-4. R:R لا تقل عن 1:2
-5. If uncertain = "no opportunity"
-
-═══════════════════════════════════════
-RESPOND WITH JSON ONLY:
-═══════════════════════════════════════
-
+== JSON ONLY ==
 {{
-  "confluence_score": <0-100>,
-  "direction": "<long أو short أو none>",
+  "confluence_score": <adjusted 0-100>,
+  "direction": "<long/short/none>",
   "entry_price": "<entry>",
-  "tp1": "<target1>",
-  "tp2": "<target2>",
-  "tp3": "<target3>",
-  "stop_loss": "<stop loss>",
+  "tp1": "<ATR x1>", "tp2": "<ATR x2>", "tp3": "<Fib 1.618>",
+  "stop_loss": "<ATR x1.5>",
   "risk_reward": "<R:R>",
-  "timeframe": "<primary timeframe>",
-  "duration_minutes": <duration mins>,
-  "macro_score": <نقاط الماكرو من 30>,
-  "liquidity_score": <نقاط السيولة من 25>,
-  "technical_score": <نقاط التحليل الفني من 45>,
-  "summary": "<summary IN ARABIC>",
-  "key_factors": ["<factor1 IN ARABIC>", "<factor2>"],
-  "risks": ["<risk1 IN ARABIC>", "<risk2>"]
+  "timeframe": "<best tf>",
+  "duration_minutes": <mins>,
+  "macro_score": <0-30>, "liquidity_score": <0-25>, "technical_score": <0-45>,
+  "summary": "<Arabic>",
+  "key_factors": ["<Arabic>"],
+  "risks": ["<Arabic>"]
 }}
 
-If score < 55:
+If score < 70:
 {{
-  "confluence_score": <النقاط>,
+  "confluence_score": <score>,
   "direction": "none",
-  "summary": "<reason IN ARABIC>",
-  "macro_score": <>,
-  "liquidity_score": <>,
-  "technical_score": <>
-}}
-"""
+  "summary": "<Arabic>",
+  "macro_score": <>, "liquidity_score": <>, "technical_score": <>
+}}"""
     return prompt
 
 
