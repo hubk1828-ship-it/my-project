@@ -69,25 +69,10 @@ async def build_live_data() -> dict:
             except Exception:
                 pass
 
-        # Get 24h tickers for change %
+        # Get 24h change from WebSocket cache (avoid REST rate limits)
+        from app.services.binance_client import _price_cache
         tickers_24h = {}
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    f"{settings.BINANCE_BASE_URL}/api/v3/ticker/24hr",
-                    timeout=10,
-                )
-                if resp.status_code == 200:
-                    for t in resp.json():
-                        if t["symbol"] in symbol_names:
-                            tickers_24h[t["symbol"]] = {
-                                "change_pct": float(t.get("priceChangePercent", 0)),
-                                "volume": float(t.get("volume", 0)),
-                                "high": float(t.get("highPrice", 0)),
-                                "low": float(t.get("lowPrice", 0)),
-                            }
-        except Exception:
-            pass
+        # No REST call needed — price_monitor already tracks via WebSocket
 
         # Get latest analysis for each symbol
         from sqlalchemy import desc
