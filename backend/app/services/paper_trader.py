@@ -136,7 +136,7 @@ async def run_paper_bot_cycle(db: AsyncSession):
                 PaperWallet.is_active == True,
             )
         )
-        wallet = w_result.scalar_one_or_none()
+        wallet = w_result.scalars().first()
         if not wallet:
             continue
 
