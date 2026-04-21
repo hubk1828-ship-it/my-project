@@ -258,6 +258,7 @@ export default function PaperTradingPage() {
 
       {/* Trades Tab */}
       {activeTab === "trades" && (
+        <>
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
