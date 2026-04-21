@@ -442,8 +442,23 @@ async def analyze_symbol_confluence(symbol: str, base_asset: str) -> Dict:
         result = await call_gemini(prompt)
 
     if not result:
-        logger.error(f"🚨 All AI failed for {symbol}")
-        return _gemini_failure_result(symbol, data.get("current_price", 0))
+        logger.warning(f"⚠️ All AI failed for {symbol} — using Math Engine fallback")
+        # Use math engine scores directly when AI is unavailable
+        tf_1h = data["klines"].get("1h", {})
+        math_score = tf_1h.get("math_score", 0)
+        math_dir = tf_1h.get("math_direction", "none")
+        result = {
+            "confluence_score": math_score,
+            "direction": math_dir,
+            "summary": f"⚙️ تحليل رياضي بحت (AI غير متاح) — Score: {math_score}/100",
+            "macro_score": 0,
+            "liquidity_score": 0,
+            "technical_score": math_score,
+            "entry_price": str(data.get("current_price", 0)),
+            "key_factors": ["تحليل رياضي: RSI, EMA, MACD, Bollinger, Fibonacci"],
+            "risks": ["⚠️ لا يوجد تحليل ماكرو/أخبار — AI غير متاح"],
+        }
+        logger.info(f"📐 Math fallback for {symbol}: score={math_score}, dir={math_dir}")
 
     # Step 3: Parse result — show Gemini's direction as-is
     # The confidence score is informational; filtering happens in signal_generator
