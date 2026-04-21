@@ -14,19 +14,36 @@ from app.services.binance_client import get_prices_batch
 logger = logging.getLogger(__name__)
 
 
-def calculate_targets(price: float, side: str, support: float, resistance: float, atr_pct: float = 2.0) -> dict:
-    """Calculate CONSERVATIVE targets — closer targets for higher success rate."""
-    # Use tighter targets: 40%, 70%, 100% of ATR instead of 100%, 180%, 250%
+def calculate_targets(price: float, side: str, support: float, resistance: float,
+                      atr_value: float = 0, swing_high: float = 0, swing_low: float = 0) -> dict:
+    """ATR-based targets with Fibonacci confirmation."""
+    from app.services.math_engine import fibonacci_levels, PHI
+
+    if atr_value <= 0:
+        atr_value = abs(resistance - support) * 0.3
+    if atr_value <= 0:
+        atr_value = price * 0.015
+
+    fib = {}
+    if swing_high > 0 and swing_low > 0:
+        fib = fibonacci_levels(swing_high, swing_low)
+
     if side == "long":
-        stop_loss = max(support * 0.998, price * (1 - atr_pct * 0.8 / 100))
-        target_1 = price * (1 + atr_pct * 0.4 / 100)
-        target_2 = price * (1 + atr_pct * 0.7 / 100)
-        target_3 = min(resistance, price * (1 + atr_pct / 100))
+        stop_loss = price - (atr_value * 1.5)
+        stop_loss = max(stop_loss, support * 0.998)
+        target_1 = price + (atr_value * 1.0)
+        target_2 = price + (atr_value * 2.0)
+        fib_ext = fib.get("extension", {}).get(PHI, 0)
+        target_3 = fib_ext if fib_ext > target_2 else price + (atr_value * 3.0)
+        target_3 = min(target_3, resistance * 1.01)
     else:
-        stop_loss = min(resistance * 1.002, price * (1 + atr_pct * 0.8 / 100))
-        target_1 = price * (1 - atr_pct * 0.4 / 100)
-        target_2 = price * (1 - atr_pct * 0.7 / 100)
-        target_3 = max(support, price * (1 - atr_pct / 100))
+        stop_loss = price + (atr_value * 1.5)
+        stop_loss = min(stop_loss, resistance * 1.002)
+        target_1 = price - (atr_value * 1.0)
+        target_2 = price - (atr_value * 2.0)
+        fib_ext = fib.get("extension", {}).get(-PHI, 0)
+        target_3 = fib_ext if 0 < fib_ext < target_2 else price - (atr_value * 3.0)
+        target_3 = max(target_3, support * 0.999)
 
     return {
         "entry_price": round(price, 8),
@@ -131,9 +148,11 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
             else:
                 support = indicators.get("support", current_price * 0.97)
                 resistance = indicators.get("resistance", current_price * 1.03)
-                atr_pct = abs(resistance - support) / current_price * 100 if resistance > support else 2.0
-                atr_pct = max(1.0, min(atr_pct, 8.0))
-                targets = calculate_targets(current_price, signal_type, support, resistance, atr_pct)
+                atr_val = indicators.get("atr", 0)
+                swing_high = indicators.get("swing_high", resistance)
+                swing_low = indicators.get("swing_low", support)
+                targets = calculate_targets(current_price, signal_type, support, resistance,
+                                            atr_value=atr_val, swing_high=swing_high, swing_low=swing_low)
                 duration_minutes = 60
                 timeframe_used = "1h"
 
@@ -233,9 +252,11 @@ async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List
             else:
                 support = indicators.get("support", current_price * 0.97)
                 resistance = indicators.get("resistance", current_price * 1.03)
-                atr_pct = abs(resistance - support) / current_price * 100 if resistance > support else 2.0
-                atr_pct = max(1.0, min(atr_pct, 8.0))
-                targets = calculate_targets(current_price, signal_type, support, resistance, atr_pct)
+                atr_val = indicators.get("atr", 0)
+                swing_high = indicators.get("swing_high", resistance)
+                swing_low = indicators.get("swing_low", support)
+                targets = calculate_targets(current_price, signal_type, support, resistance,
+                                            atr_value=atr_val, swing_high=swing_high, swing_low=swing_low)
 
             timeframe_used = indicators.get("timeframe", timeframe)
             volume_ratio = indicators.get("volume_ratio", 1)

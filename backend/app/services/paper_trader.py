@@ -25,7 +25,20 @@ async def execute_paper_trade(
 ) -> dict:
     """Execute a virtual trade using real market price."""
     try:
-        # Get real price from Binance
+        # === Risk Checks ===
+        from app.services.risk_manager import check_cooldown, check_drawdown
+
+        # Cooldown: no same-symbol trade within 5 minutes
+        cd = await check_cooldown(str(wallet.id), symbol, db, cooldown_minutes=5)
+        if not cd["can_trade"]:
+            return {"success": False, "error": f"⏳ {cd['reason']}"}
+
+        # Drawdown protection (5%)
+        dd = await check_drawdown(wallet, db, max_drawdown_pct=5.0)
+        if not dd["safe"]:
+            return {"success": False, "error": f"🛑 Drawdown {dd['drawdown_pct']}% — إيقاف التداول"}
+
+        # Get real price
         prices = await get_prices_batch([symbol])
         current_price = prices.get(symbol, 0)
         if current_price <= 0:
