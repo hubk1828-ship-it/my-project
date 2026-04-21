@@ -57,9 +57,10 @@ async def execute_paper_trade(
                 select(PaperHolding).where(
                     PaperHolding.wallet_id == wallet.id,
                     PaperHolding.symbol == symbol,
-                )
+                    PaperHolding.quantity > 0,
+                ).order_by(PaperHolding.updated_at.asc()).limit(1)
             )
-            holding = result.scalar_one_or_none()
+            holding = result.scalars().first()
 
             if not holding or float(holding.quantity) <= 0:
                 return {"success": False, "error": f"لا تملك {base_asset} للبيع"}
