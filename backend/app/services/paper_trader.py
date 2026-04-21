@@ -40,29 +40,15 @@ async def execute_paper_trade(
             quantity = amount_usdt / current_price
             wallet.current_balance = float(wallet.current_balance) - amount_usdt
 
-            # Update holdings
-            result = await db.execute(
-                select(PaperHolding).where(
-                    PaperHolding.wallet_id == wallet.id,
-                    PaperHolding.symbol == symbol,
-                )
+            # Always create a new independent holding (each signal = separate position)
+            holding = PaperHolding(
+                wallet_id=wallet.id,
+                symbol=symbol,
+                asset=base_asset,
+                quantity=quantity,
+                avg_buy_price=current_price,
             )
-            holding = result.scalar_one_or_none()
-
-            if holding:
-                old_total = float(holding.quantity) * float(holding.avg_buy_price)
-                new_total = old_total + amount_usdt
-                holding.quantity = float(holding.quantity) + quantity
-                holding.avg_buy_price = new_total / float(holding.quantity)
-            else:
-                holding = PaperHolding(
-                    wallet_id=wallet.id,
-                    symbol=symbol,
-                    asset=base_asset,
-                    quantity=quantity,
-                    avg_buy_price=current_price,
-                )
-                db.add(holding)
+            db.add(holding)
 
             pnl = 0
 
@@ -245,11 +231,11 @@ async def run_paper_bot_cycle(db: AsyncSession):
                 if open_positions + buy_count >= max_positions:
                     break
 
-                # Already holding?
+                # Already bought this exact signal?
                 existing = await db.execute(
                     select(PaperHolding).where(
                         PaperHolding.wallet_id == wallet.id,
-                        PaperHolding.symbol == signal.symbol,
+                        PaperHolding.signal_id == signal.id,
                         PaperHolding.quantity > 0,
                     )
                 )
@@ -288,12 +274,13 @@ async def run_paper_bot_cycle(db: AsyncSession):
                     executed_by="paper_bot",
                 )
                 if result.get("success"):
-                    # Set TP/SL from signal on the holding
+                    # Set TP/SL — find the newest holding (no signal_id yet)
                     h_res = await db.execute(
                         select(PaperHolding).where(
                             PaperHolding.wallet_id == wallet.id,
                             PaperHolding.symbol == signal.symbol,
-                        )
+                            PaperHolding.signal_id == None,
+                        ).order_by(PaperHolding.updated_at.desc()).limit(1)
                     )
                     new_holding = h_res.scalar_one_or_none()
                     if new_holding:

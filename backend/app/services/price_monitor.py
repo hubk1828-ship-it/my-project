@@ -114,8 +114,9 @@ async def run_paper_auto_buy(db: AsyncSession):
         for signal in active_signals:
             if float(signal.confidence or 0) < user_min_conf:
                 continue
+            # Already bought this exact signal?
             h_result = await db.execute(
-                select(PaperHolding).where(PaperHolding.wallet_id == wallet.id, PaperHolding.symbol == signal.symbol)
+                select(PaperHolding).where(PaperHolding.wallet_id == wallet.id, PaperHolding.signal_id == signal.id)
             )
             if h_result.scalars().first():
                 continue
@@ -124,9 +125,13 @@ async def run_paper_auto_buy(db: AsyncSession):
                 continue
             result = await execute_paper_trade(user_id=settings.user_id, wallet=wallet, symbol=signal.symbol, side="buy", amount_usdt=trade_amount, db=db, executed_by="paper_bot")
             if result.get("success"):
-                # Set TP/SL from signal on the holding
+                # Set TP/SL — find the newest holding (no signal_id yet)
                 h_new = await db.execute(
-                    select(PaperHolding).where(PaperHolding.wallet_id == wallet.id, PaperHolding.symbol == signal.symbol)
+                    select(PaperHolding).where(
+                        PaperHolding.wallet_id == wallet.id,
+                        PaperHolding.symbol == signal.symbol,
+                        PaperHolding.signal_id == None,
+                    ).order_by(PaperHolding.updated_at.desc()).limit(1)
                 )
                 new_holding = h_new.scalars().first()
                 if new_holding:
