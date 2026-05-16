@@ -29,7 +29,7 @@ async def execute_paper_trade(
         from app.services.risk_manager import check_cooldown, check_drawdown
 
         # Cooldown: no same-symbol trade within 5 minutes
-        cd = await check_cooldown(str(wallet.id), symbol, db, cooldown_minutes=5)
+        cd = await check_cooldown(str(wallet.id), symbol, db, cooldown_minutes=2)
         if not cd["can_trade"]:
             return {"success": False, "error": f"⏳ {cd['reason']}"}
 
@@ -191,6 +191,11 @@ async def run_paper_bot_cycle(db: AsyncSession):
                 sell_reason = "take_profit"
             elif sl > 0 and current_price <= sl:
                 sell_reason = "stop_loss"
+            # Trailing stop: if price moved 50%+ towards TP but reversed back to entry
+            elif tp > 0 and sl > 0 and entry > 0:
+                progress = (current_price - entry) / (tp - entry) if tp != entry else 0
+                if progress < -0.3:  # Price went 30% below entry towards SL direction
+                    sell_reason = "trailing_exit"
 
             if sell_reason:
                 sell_amount = qty * current_price
@@ -229,16 +234,22 @@ async def run_paper_bot_cycle(db: AsyncSession):
         if open_positions >= max_positions:
             cycle_log.append(f"⛔ max positions ({open_positions}/{max_positions})")
         else:
-            # Get active signals
+            # Get active signals — accept both cases (long/LONG, short/SHORT)
             user_min_conf = float(settings.min_confidence or 40)
+            effective_min = min(user_min_conf, 50)  # Lower threshold for more trades
             sig_result = await db.execute(
                 select(TradeSignal).where(
                     TradeSignal.status == "active",
-                    TradeSignal.signal_type.in_(["long", "short"]),
-                    TradeSignal.confidence >= min(user_min_conf, 70),
-                )
+                    TradeSignal.confidence >= effective_min,
+                ).order_by(TradeSignal.confidence.desc())
             )
             active_signals = sig_result.scalars().all()
+
+            # Filter for valid signal types (case-insensitive)
+            active_signals = [
+                s for s in active_signals
+                if s.signal_type and s.signal_type.lower() in ("long", "short")
+            ]
 
             buy_count = 0
             for signal in active_signals:
@@ -270,7 +281,7 @@ async def run_paper_bot_cycle(db: AsyncSession):
                     cycle_log.append(f"⛔ daily limit {today_trades}/{settings.max_trades_per_day}")
                     break
 
-                # Calculate trade amount
+                # Calculate trade amount — smaller per trade for more diversification
                 trade_size = float(getattr(settings, 'trade_size_pct', 20) or 20)
                 trade_amount = min(
                     float(wallet.current_balance) * trade_size / 100,
@@ -280,7 +291,11 @@ async def run_paper_bot_cycle(db: AsyncSession):
                 if trade_amount < 5:
                     continue
 
-                # Execute buy
+                # Execute buy (only longs for paper bot safety)
+                side = signal.signal_type.lower() if signal.signal_type else "long"
+                if side != "long":
+                    continue  # Paper bot only buys for now
+
                 result = await execute_paper_trade(
                     user_id=settings.user_id, wallet=wallet,
                     symbol=signal.symbol, side="buy",
@@ -288,7 +303,7 @@ async def run_paper_bot_cycle(db: AsyncSession):
                     executed_by="paper_bot",
                 )
                 if result.get("success"):
-                    # Set TP/SL — find the newest holding (no signal_id yet)
+                    # Set TP/SL — find the newest holding
                     h_res = await db.execute(
                         select(PaperHolding).where(
                             PaperHolding.wallet_id == wallet.id,
@@ -319,3 +334,4 @@ async def run_paper_bot_cycle(db: AsyncSession):
             logger.info(f"🤖 bot [{settings.user_id[:8]}]: {' | '.join(cycle_log)}")
 
     await db.commit()
+

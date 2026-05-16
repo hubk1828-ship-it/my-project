@@ -85,7 +85,7 @@ def estimate_signal_duration(timeframe: str, volatility_pct: float, volume_ratio
 
 
 async def generate_signals(db: AsyncSession) -> List[Dict]:
-    """Generate signals from existing analysis results (Gemini-based)."""
+    """Generate signals from deterministic engine analysis results."""
     result = await db.execute(
         select(SupportedSymbol).where(SupportedSymbol.is_active == True)
     )
@@ -104,23 +104,21 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
             if not analysis or analysis.decision == "no_opportunity":
                 continue
 
-            # Skip Gemini failures
             indicators = analysis.technical_indicators or {}
-            if indicators.get("ai_status") == "failed":
-                continue
 
-            current_price = indicators.get("current_price", 0)
+            # Get price from engine output
+            current_price = indicators.get("price", 0)
             if current_price <= 0:
                 continue
 
             confidence = float(analysis.confidence_score or 0)
             signal_type = "long" if analysis.decision == "buy" else "short"
 
-            # Filter: skip signals below minimum confidence threshold
-            if confidence < 70:
+            # Lower threshold = more trades = more small consistent profits
+            if confidence < 60:
                 continue
 
-            # Check for existing active signal
+            # Check for existing active signal for same symbol
             existing = await db.execute(
                 select(TradeSignal).where(
                     TradeSignal.symbol == sym.symbol,
@@ -130,34 +128,40 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
             if existing.scalars().first():
                 continue
 
-            # Use AI-provided targets if available (from Confluence analyzer)
-            ai_entry = indicators.get("entry_price")
-            ai_tp1 = indicators.get("tp1")
-            ai_sl = indicators.get("stop_loss")
+            # Use deterministic engine targets directly
+            engine_tp = indicators.get("tp", 0)
+            engine_sl = indicators.get("sl", 0)
+            engine_entry = indicators.get("price", current_price)
+            atr_val = indicators.get("atr", current_price * 0.015)
 
-            if ai_entry and ai_tp1 and ai_sl:
+            if engine_tp and engine_sl:
+                # Conservative TP1 = closer target for higher win rate
+                # TP1 = ATR × 0.8 (easy to hit), TP2 = engine TP, TP3 = extended
+                if signal_type == "long":
+                    tp1 = engine_entry + abs(atr_val) * 0.8
+                    tp2 = float(engine_tp)
+                    tp3 = engine_entry + abs(atr_val) * 3.0
+                else:
+                    tp1 = engine_entry - abs(atr_val) * 0.8
+                    tp2 = float(engine_tp)
+                    tp3 = engine_entry - abs(atr_val) * 3.0
+
                 targets = {
-                    "entry_price": float(ai_entry),
-                    "target_1": float(ai_tp1),
-                    "target_2": float(indicators.get("tp2", ai_tp1)),
-                    "target_3": float(indicators.get("tp3", ai_tp1)),
-                    "stop_loss": float(ai_sl),
+                    "entry_price": float(engine_entry),
+                    "target_1": round(tp1, 8),
+                    "target_2": round(tp2, 8),
+                    "target_3": round(tp3, 8),
+                    "stop_loss": float(engine_sl),
                 }
-                duration_minutes = indicators.get("duration_minutes", 60)
-                timeframe_used = indicators.get("timeframe", "1h")
             else:
-                support = indicators.get("support", current_price * 0.97)
-                resistance = indicators.get("resistance", current_price * 1.03)
-                atr_val = indicators.get("atr", 0)
-                swing_high = indicators.get("swing_high", resistance)
-                swing_low = indicators.get("swing_low", support)
+                support = indicators.get("low_50", current_price * 0.97)
+                resistance = indicators.get("high_50", current_price * 1.03)
                 targets = calculate_targets(current_price, signal_type, support, resistance,
-                                            atr_value=atr_val, swing_high=swing_high, swing_low=swing_low)
-                duration_minutes = 60
-                timeframe_used = "1h"
+                                            atr_value=atr_val)
 
-            volume_ratio = indicators.get("volume_ratio", 1)
-            duration = estimate_signal_duration(timeframe_used, 2.0, volume_ratio if volume_ratio else 1)
+            timeframe_used = "15m"
+            volume_ratio = 1
+            duration = estimate_signal_duration(timeframe_used, 2.0, volume_ratio)
 
             signal = TradeSignal(
                 symbol=sym.symbol,
@@ -169,13 +173,13 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
                 target_3=targets["target_3"],
                 stop_loss=targets["stop_loss"],
                 confidence=confidence,
-                reasoning=analysis.reasoning or "بناءً على تحليل Gemini AI",
+                reasoning=analysis.reasoning or "📐 تحليل حتمي رياضي",
                 status="active",
                 technical_data={
                     **indicators,
                     "analysis_id": analysis.id,
                     "duration_reason": duration["reason"],
-                    "source": "gemini_confluence",
+                    "source": "deterministic_engine",
                 },
                 expires_at=duration["expires_at"],
             )
@@ -190,113 +194,11 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
     return generated
 
 
-async def generate_signals_live(db: AsyncSession, timeframe: str = "1h") -> List[Dict]:
-    """Generate signals using Gemini AI Confluence analysis."""
-    from app.services.confluence_analyzer import analyze_symbol_confluence
-
-    result = await db.execute(
-        select(SupportedSymbol).where(SupportedSymbol.is_active == True)
-    )
-    symbols = result.scalars().all()
-    generated = []
-
-    for sym in symbols:
-        try:
-            # Use Gemini Confluence analyzer
-            analysis_result = await analyze_symbol_confluence(sym.symbol, sym.base_asset)
-
-            decision = analysis_result.get("decision", "no_opportunity")
-            if decision == "no_opportunity":
-                continue
-
-            indicators = analysis_result.get("technical_indicators", {})
-            
-            # Skip Gemini failures
-            if indicators.get("ai_status") == "failed":
-                logger.warning(f"⚠️ Skipping {sym.symbol} — Gemini failed")
-                continue
-
-            confidence = float(analysis_result.get("confidence_score", 0))
-            signal_type = "long" if decision == "buy" else "short"
-            current_price = indicators.get("current_price", 0)
-            if current_price <= 0:
-                continue
-
-            # Filter: skip signals below minimum confidence
-            if confidence < 70:
-                continue
-
-            # Duplicate check — no active signal for same symbol
-            existing = await db.execute(
-                select(TradeSignal).where(
-                    TradeSignal.symbol == sym.symbol,
-                    TradeSignal.status == "active",
-                )
-            )
-            if existing.scalar_one_or_none():
-                continue
-
-            # Use Gemini-provided targets if available
-            ai_entry = indicators.get("entry_price")
-            ai_tp1 = indicators.get("tp1")
-            ai_sl = indicators.get("stop_loss")
-
-            if ai_entry and ai_tp1 and ai_sl:
-                targets = {
-                    "entry_price": float(ai_entry),
-                    "target_1": float(ai_tp1),
-                    "target_2": float(indicators.get("tp2", ai_tp1)),
-                    "target_3": float(indicators.get("tp3", ai_tp1)),
-                    "stop_loss": float(ai_sl),
-                }
-            else:
-                support = indicators.get("support", current_price * 0.97)
-                resistance = indicators.get("resistance", current_price * 1.03)
-                atr_val = indicators.get("atr", 0)
-                swing_high = indicators.get("swing_high", resistance)
-                swing_low = indicators.get("swing_low", support)
-                targets = calculate_targets(current_price, signal_type, support, resistance,
-                                            atr_value=atr_val, swing_high=swing_high, swing_low=swing_low)
-
-            timeframe_used = indicators.get("timeframe", timeframe)
-            volume_ratio = indicators.get("volume_ratio", 1)
-            duration = estimate_signal_duration(timeframe_used, 2.0, volume_ratio if volume_ratio else 1)
-            tf_type = "short_term" if duration["is_short_term"] else "long_term"
-
-            signal = TradeSignal(
-                symbol=sym.symbol,
-                signal_type=signal_type,
-                timeframe_type=tf_type,
-                entry_price=targets["entry_price"],
-                target_1=targets["target_1"],
-                target_2=targets["target_2"],
-                target_3=targets["target_3"],
-                stop_loss=targets["stop_loss"],
-                confidence=confidence,
-                reasoning=analysis_result.get("reasoning", "بناءً على تحليل Gemini AI"),
-                status="active",
-                technical_data={
-                    **indicators,
-                    "timeframe": timeframe_used,
-                    "duration_minutes": duration["duration_minutes"],
-                    "duration_reason": duration["reason"],
-                    "source": "gemini_confluence",
-                },
-                expires_at=duration["expires_at"],
-            )
-            db.add(signal)
-            generated.append({
-                "symbol": sym.symbol, "type": signal_type, "tf": tf_type,
-                "confidence": confidence, "timeframe": timeframe_used,
-                "duration_minutes": duration["duration_minutes"],
-            })
-
-        except Exception as e:
-            logger.error(f"Live signal generation failed for {sym.symbol}: {e}")
-
-    await db.commit()
-    logger.info(f"✅ Generated {len(generated)} live signals (Gemini)")
-    return generated
+async def generate_signals_live(db: AsyncSession, timeframe: str = "15m") -> List[Dict]:
+    """Generate signals using deterministic engine (replaces Gemini)."""
+    # Just delegates to the standard generate_signals since analysis
+    # is now pre-computed by the deterministic engine in run_analysis_job
+    return await generate_signals(db)
 
 
 async def update_signal_statuses(db: AsyncSession):
