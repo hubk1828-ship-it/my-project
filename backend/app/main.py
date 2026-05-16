@@ -20,6 +20,7 @@ from app.models.analysis import BotAnalysis
 from app.models.trade import Trade, BotSettings, SupportedSymbol, TrustedNewsSource
 from app.models.notification import Notification, UserNotificationPreference, RefreshToken
 from app.models.paper_trading import PaperWallet, PaperHolding, PaperTrade, PaperBotSettings, TradeSignal
+from app.models.learning import ComponentWeight, PredictionLog, SymbolProfile, PerformanceLog
 
 # Import routers
 from app.api.auth import router as auth_router
@@ -40,132 +41,108 @@ scheduler = AsyncIOScheduler()
 
 
 async def run_analysis_job():
-    """Scheduled job: run Confluence AI analysis for all active symbols."""
-    from app.services.confluence_analyzer import analyze_symbol_confluence
-    from app.services.analyzer import analyze_symbol  # Fallback
+    """Scheduled job: deterministic analysis for all active symbols."""
+    from app.services.deterministic_engine import analyze_symbol_deterministic
+    from app.services.liquidity_analyzer import get_all_liquidity_data
+    from app.services.statistical_learner import load_weights, log_prediction
     from app.services.notifier import send_notification, format_opportunity_alert
-    from app.services.binance_client import get_prices_batch
+    from app.services.binance_client import get_prices_batch, BinanceClient
+    import asyncio
 
-    logger.info("🧠 Starting Confluence AI analysis...")
+    logger.info("📐 Starting deterministic analysis...")
 
     async with AsyncSessionLocal() as db:
+        # Load dynamic weights from DB
+        weights = await load_weights(db)
+
         # Get active symbols
         result = await db.execute(
             select(SupportedSymbol).where(SupportedSymbol.is_active == True)
         )
         symbols = result.scalars().all()
 
+        # Get BTC klines once for correlation
+        btc_klines = []
+        try:
+            client = BinanceClient("", "")
+            btc_klines = await client.get_klines("BTCUSDT", "15m", 50)
+        except Exception:
+            pass
+
         for i, sym in enumerate(symbols):
             try:
-                # Delay between symbols to avoid Binance rate limits
                 if i > 0:
-                    import asyncio
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(3)
 
-                # Try Confluence AI
-                try:
-                    analysis_result = await analyze_symbol_confluence(sym.symbol, sym.base_asset)
-                except Exception as e:
-                    logger.error(f"Confluence failed for {sym.symbol}: {e}")
-                    analysis_result = {
-                        "symbol": sym.symbol,
-                        "decision": "no_opportunity",
-                        "confidence_score": 0,
-                        "reasoning": f"🚨 خطأ في التحليل: {str(e)}",
-                        "is_momentum_real": None,
-                        "price_confirmed_news": None,
-                        "news_source": "AI (ERROR)",
-                        "news_title": f"🚨 خطأ Gemini: {str(e)[:100]}",
-                        "news_url": None,
-                        "technical_indicators": {"gemini_status": "failed"},
+                # Fetch klines + liquidity data
+                client = BinanceClient("", "")
+                klines = await client.get_klines(sym.symbol, "15m", 100)
+                liq_data = await get_all_liquidity_data(sym.symbol)
+
+                # Load symbol profile
+                profile_result = await db.execute(
+                    select(SymbolProfile).where(SymbolProfile.symbol == sym.symbol)
+                )
+                profile = profile_result.scalar_one_or_none()
+                profile_dict = None
+                if profile:
+                    profile_dict = {
+                        "sl_multiplier": float(profile.sl_multiplier),
+                        "tp_multiplier": float(profile.tp_multiplier),
+                        "confidence_bias": float(profile.confidence_bias),
                     }
 
-                # Save to DB — delete old analysis for same symbol first
-                old_analyses = await db.execute(
-                    select(BotAnalysis).where(BotAnalysis.symbol == sym.symbol)
+                # Run deterministic analysis
+                signal = await analyze_symbol_deterministic(
+                    symbol=sym.symbol,
+                    klines_data=klines,
+                    btc_klines_data=btc_klines,
+                    weights=weights,
+                    symbol_profile=profile_dict,
+                    order_book=liq_data["order_book"],
+                    funding_rate=liq_data["funding_rate"],
+                    fear_greed=liq_data["fear_greed"],
+                    ls_ratio=liq_data["ls_ratio"],
+                    spot_price=liq_data["spot_price"],
                 )
-                for old in old_analyses.scalars().all():
-                    await db.delete(old)
 
-                analysis = BotAnalysis(**analysis_result)
+                # Map to BotAnalysis format for DB compatibility
+                decision = "no_opportunity"
+                if signal.get("should_trade") or signal.get("near_miss"):
+                    decision = "buy" if signal["signal_type"] == "LONG" else "sell"
+
+                reasoning_parts = [
+                    f"📐 تحليل حتمي | الثقة: {signal.get('confidence', 0)}%",
+                    f"الاتجاه: {signal.get('trend_direction', 'N/A')} | النظام: {signal.get('market_regime', 'N/A')}",
+                    f"RSI: {signal.get('rsi', 0)} | VWAP: {signal.get('vwap_position', 'N/A')}",
+                    f"R:R = {signal.get('rr_ratio', 0)}:1 | الحجم: {signal.get('position_size', 'N/A')}",
+                ]
+
+                # Save to DB
+                old = await db.execute(select(BotAnalysis).where(BotAnalysis.symbol == sym.symbol))
+                for o in old.scalars().all():
+                    await db.delete(o)
+
+                analysis = BotAnalysis(
+                    symbol=sym.symbol,
+                    decision=decision,
+                    confidence_score=signal.get("confidence", 0),
+                    reasoning=" | ".join(reasoning_parts),
+                    technical_indicators=signal,
+                )
                 db.add(analysis)
+
+                # Log prediction for learning
+                if signal.get("should_trade"):
+                    await log_prediction(db, signal)
+
                 await db.commit()
+                logger.info(f"✅ {sym.symbol}: {decision} ({signal.get('confidence', 0)}%)")
 
-                # If opportunity found, notify users and execute auto-trades
-                if analysis.decision in ("buy", "sell"):
-                    prices = await get_prices_batch([sym.symbol])
-                    price = prices.get(sym.symbol, 0)
-
-                    # Notify all active users
-                    users_result = await db.execute(
-                        select(User).where(User.is_active == True)
-                    )
-                    for user in users_result.scalars().all():
-                        content = format_opportunity_alert(
-                            sym.symbol, analysis.decision, price, analysis.reasoning
-                        )
-                        await send_notification(user.id, "opportunity", content, db)
-
-                    # Auto-trade for enabled users — direct link between analysis and trading
-                    from app.services.trader import check_trade_limits, execute_auto_trade
-                    from app.services.notifier import format_trade_executed_alert, format_trade_failed_alert
-                    from app.api.ws import broadcast_trade_event
-
-                    settings_result = await db.execute(
-                        select(BotSettings).where(
-                            BotSettings.is_auto_trade_enabled == True,
-                            BotSettings.is_admin_approved == True,
-                        )
-                    )
-                    for bot_setting in settings_result.scalars().all():
-                        # Get user wallet
-                        wallet_result = await db.execute(
-                            select(Wallet).where(
-                                Wallet.user_id == bot_setting.user_id,
-                                Wallet.is_active == True,
-                            )
-                        )
-                        wallet = wallet_result.scalar_one_or_none()
-                        if not wallet:
-                            continue
-
-                        trade_amount = float(bot_setting.max_trade_amount)
-                        limits_check = await check_trade_limits(
-                            bot_setting.user_id, bot_setting, trade_amount, trade_amount * 10, db
-                        )
-
-                        if limits_check["can_trade"]:
-                            result = await execute_auto_trade(
-                                bot_setting.user_id, wallet, analysis, trade_amount, db
-                            )
-
-                            # Broadcast trade event via WebSocket
-                            await broadcast_trade_event({
-                                "symbol": sym.symbol,
-                                "side": analysis.decision,
-                                "success": result["success"],
-                                "price": result.get("price", 0),
-                                "quantity": result.get("quantity", 0),
-                                "total_value": result.get("total_value", 0),
-                            })
-
-                            if result["success"]:
-                                content = format_trade_executed_alert(
-                                    sym.symbol, analysis.decision,
-                                    result["quantity"], result["price"], result["total_value"]
-                                )
-                                await send_notification(bot_setting.user_id, "trade_executed", content, db)
-                            else:
-                                content = format_trade_failed_alert(sym.symbol, result["error"])
-                                await send_notification(bot_setting.user_id, "trade_failed", content, db)
-
-                logger.info(f"✅ {sym.symbol}: {analysis_result['decision']}")
             except Exception as e:
                 logger.error(f"❌ Analysis failed for {sym.symbol}: {e}")
 
-        await db.commit()
-
-    logger.info("✅ Analysis cycle complete")
+    logger.info("✅ Deterministic analysis cycle complete")
 
 
 async def run_paper_bot_job():
@@ -209,6 +186,33 @@ async def run_signals_job():
                 logger.info(f"🧹 Cleaned {result.rowcount} old analyses (>24h)")
         except Exception as e:
             logger.error(f"Cleanup failed: {e}")
+
+
+async def run_learning_job():
+    """Scheduled job: evaluate prediction outcomes + Bayesian weight update."""
+    from app.services.statistical_learner import evaluate_outcomes, run_bayesian_learning, update_symbol_profiles, save_daily_performance
+    from app.services.binance_client import get_prices_batch
+
+    logger.info("🧠 Starting learning cycle...")
+    async with AsyncSessionLocal() as db:
+        # Get current prices
+        result = await db.execute(select(SupportedSymbol).where(SupportedSymbol.is_active == True))
+        symbols = [s.symbol for s in result.scalars().all()]
+        prices = await get_prices_batch(symbols)
+
+        # Evaluate pending predictions
+        await evaluate_outcomes(db, prices)
+
+        # Bayesian weight update
+        await run_bayesian_learning(db)
+
+        # Update symbol profiles
+        await update_symbol_profiles(db)
+
+        # Save daily performance
+        await save_daily_performance(db)
+
+    logger.info("✅ Learning cycle complete")
 
 
 async def seed_default_data():
@@ -323,6 +327,11 @@ async def lifespan(app: FastAPI):
 
     await seed_default_data()
 
+    # Seed component weights for learning
+    from app.services.statistical_learner import seed_weights
+    async with AsyncSessionLocal() as db:
+        await seed_weights(db)
+
     # Start Binance WebSocket for live prices (avoids REST API rate limits)
     from app.services.binance_client import start_price_stream
     async with AsyncSessionLocal() as db:
@@ -336,15 +345,17 @@ async def lifespan(app: FastAPI):
         logger.info(f"🔌 WebSocket price stream started for {len(active_symbols)} symbols")
 
     # Start scheduler
-    scheduler.add_job(run_analysis_job, "interval", minutes=30, id="analysis_job")
+    scheduler.add_job(run_analysis_job, "interval", minutes=15, id="analysis_job")
     scheduler.add_job(run_price_monitor_job, "interval", seconds=5, id="price_monitor_job")
     scheduler.add_job(run_paper_bot_job, "interval", minutes=1, id="paper_bot_job")
     scheduler.add_job(run_signals_job, "interval", minutes=5, id="signals_job")
+    scheduler.add_job(run_learning_job, "interval", hours=4, id="learning_job")
     scheduler.start()
-    logger.info("⏰ Analysis scheduler started (every 1 hour)")
-    logger.info("⏰ Paper bot scheduler started (every 10 minutes)")
-    logger.info("⏰ Signal generator started (every 30 minutes)")
-    logger.info("⏰ Price monitor started (every 5 seconds)")
+    logger.info("⏰ Deterministic analysis started (every 15 min)")
+    logger.info("⏰ Paper bot scheduler started (every 1 min)")
+    logger.info("⏰ Signal generator started (every 5 min)")
+    logger.info("⏰ Price monitor started (every 5 sec)")
+    logger.info("⏰ Learning cycle started (every 4 hours)")
 
     yield
 
