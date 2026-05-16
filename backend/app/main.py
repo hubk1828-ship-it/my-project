@@ -42,110 +42,119 @@ scheduler = AsyncIOScheduler()
 
 async def run_analysis_job():
     """Scheduled job: deterministic analysis for all active symbols."""
-    from app.services.deterministic_engine import analyze_symbol_deterministic
-    from app.services.liquidity_analyzer import get_all_liquidity_data
-    from app.services.statistical_learner import load_weights, log_prediction
-    from app.services.notifier import send_notification, format_opportunity_alert
-    from app.services.binance_client import get_prices_batch, BinanceClient
-    import asyncio
+    import traceback
+    try:
+        from app.services.deterministic_engine import analyze_symbol_deterministic
+        from app.services.liquidity_analyzer import get_all_liquidity_data
+        from app.services.statistical_learner import load_weights, log_prediction
+        from app.services.notifier import send_notification, format_opportunity_alert
+        from app.services.binance_client import get_prices_batch, BinanceClient
+        import asyncio
+    except Exception as e:
+        logger.error(f"❌ IMPORT ERROR in analysis job: {e}\n{traceback.format_exc()}")
+        return
 
     logger.info("📐 Starting deterministic analysis...")
 
-    async with AsyncSessionLocal() as db:
-        # Load dynamic weights from DB
-        weights = await load_weights(db)
+    try:
+        async with AsyncSessionLocal() as db:
+            # Load dynamic weights from DB
+            weights = await load_weights(db)
 
-        # Get active symbols
-        result = await db.execute(
-            select(SupportedSymbol).where(SupportedSymbol.is_active == True)
-        )
-        symbols = result.scalars().all()
+            # Get active symbols
+            result = await db.execute(
+                select(SupportedSymbol).where(SupportedSymbol.is_active == True)
+            )
+            symbols = result.scalars().all()
+            logger.info(f"📐 Found {len(symbols)} active symbols")
 
-        # Get BTC klines once for correlation
-        btc_klines = []
-        try:
-            client = BinanceClient("", "")
-            btc_klines = await client.get_klines("BTCUSDT", "15m", 50)
-        except Exception:
-            pass
-
-        for i, sym in enumerate(symbols):
+            # Get BTC klines once for correlation
+            btc_klines = []
             try:
-                if i > 0:
-                    await asyncio.sleep(3)
-
-                # Fetch klines + liquidity data
                 client = BinanceClient("", "")
-                klines = await client.get_klines(sym.symbol, "15m", 100)
-                liq_data = await get_all_liquidity_data(sym.symbol)
-
-                # Load symbol profile
-                profile_result = await db.execute(
-                    select(SymbolProfile).where(SymbolProfile.symbol == sym.symbol)
-                )
-                profile = profile_result.scalar_one_or_none()
-                profile_dict = None
-                if profile:
-                    profile_dict = {
-                        "sl_multiplier": float(profile.sl_multiplier),
-                        "tp_multiplier": float(profile.tp_multiplier),
-                        "confidence_bias": float(profile.confidence_bias),
-                    }
-
-                # Run deterministic analysis
-                signal = await analyze_symbol_deterministic(
-                    symbol=sym.symbol,
-                    klines_data=klines,
-                    btc_klines_data=btc_klines,
-                    weights=weights,
-                    symbol_profile=profile_dict,
-                    order_book=liq_data["order_book"],
-                    funding_rate=liq_data["funding_rate"],
-                    fear_greed=liq_data["fear_greed"],
-                    ls_ratio=liq_data["ls_ratio"],
-                    spot_price=liq_data["spot_price"],
-                )
-
-                # Map to BotAnalysis format for DB compatibility
-                decision = "no_opportunity"
-                sig_type = signal.get("signal_type", "NONE")
-                if signal.get("should_trade"):
-                    decision = "buy" if sig_type == "LONG" else "sell"
-                elif signal.get("near_miss"):
-                    decision = "buy" if sig_type == "LONG" else "sell"
-
-                reasoning_parts = [
-                    f"📐 تحليل حتمي | الثقة: {signal.get('confidence', 0)}%",
-                    f"الاتجاه: {signal.get('trend_direction', 'N/A')} | النظام: {signal.get('market_regime', 'N/A')}",
-                    f"RSI: {signal.get('rsi', 0)} | VWAP: {signal.get('vwap_position', 'N/A')}",
-                    f"R:R = {signal.get('rr_ratio', 0)}:1 | الحجم: {signal.get('position_size', 'N/A')}",
-                ]
-
-                # Save to DB
-                old = await db.execute(select(BotAnalysis).where(BotAnalysis.symbol == sym.symbol))
-                for o in old.scalars().all():
-                    await db.delete(o)
-
-                analysis = BotAnalysis(
-                    symbol=sym.symbol,
-                    decision=decision,
-                    confidence_score=signal.get("confidence", 0),
-                    reasoning=" | ".join(reasoning_parts),
-                    technical_indicators=signal,
-                )
-                db.add(analysis)
-
-                # Log prediction for learning
-                if signal.get("should_trade"):
-                    await log_prediction(db, signal)
-
-                await db.commit()
-                logger.info(f"✅ {sym.symbol}: {decision} ({signal.get('confidence', 0)}%)")
-
+                btc_klines = await client.get_klines("BTCUSDT", "15m", 50)
             except Exception as e:
-                logger.error(f"❌ Analysis failed for {sym.symbol}: {e}")
+                logger.warning(f"⚠️ BTC klines failed: {e}")
 
-    logger.info("✅ Deterministic analysis cycle complete")
+            for i, sym in enumerate(symbols):
+                try:
+                    if i > 0:
+                        await asyncio.sleep(3)
+
+                    # Fetch klines + liquidity data
+                    client = BinanceClient("", "")
+                    klines = await client.get_klines(sym.symbol, "15m", 100)
+                    liq_data = await get_all_liquidity_data(sym.symbol)
+
+                    # Load symbol profile
+                    profile_result = await db.execute(
+                        select(SymbolProfile).where(SymbolProfile.symbol == sym.symbol)
+                    )
+                    profile = profile_result.scalar_one_or_none()
+                    profile_dict = None
+                    if profile:
+                        profile_dict = {
+                            "sl_multiplier": float(profile.sl_multiplier),
+                            "tp_multiplier": float(profile.tp_multiplier),
+                            "confidence_bias": float(profile.confidence_bias),
+                        }
+
+                    # Run deterministic analysis
+                    signal = await analyze_symbol_deterministic(
+                        symbol=sym.symbol,
+                        klines_data=klines,
+                        btc_klines_data=btc_klines,
+                        weights=weights,
+                        symbol_profile=profile_dict,
+                        order_book=liq_data["order_book"],
+                        funding_rate=liq_data["funding_rate"],
+                        fear_greed=liq_data["fear_greed"],
+                        ls_ratio=liq_data["ls_ratio"],
+                        spot_price=liq_data["spot_price"],
+                    )
+
+                    # Map to BotAnalysis format for DB compatibility
+                    decision = "no_opportunity"
+                    sig_type = signal.get("signal_type", "NONE")
+                    if signal.get("should_trade"):
+                        decision = "buy" if sig_type == "LONG" else "sell"
+                    elif signal.get("near_miss"):
+                        decision = "buy" if sig_type == "LONG" else "sell"
+
+                    reasoning_parts = [
+                        f"📐 تحليل حتمي | الثقة: {signal.get('confidence', 0)}%",
+                        f"الاتجاه: {signal.get('trend_direction', 'N/A')} | النظام: {signal.get('market_regime', 'N/A')}",
+                        f"RSI: {signal.get('rsi', 0)} | VWAP: {signal.get('vwap_position', 'N/A')}",
+                        f"R:R = {signal.get('rr_ratio', 0)}:1 | الحجم: {signal.get('position_size', 'N/A')}",
+                    ]
+
+                    # Save to DB
+                    old = await db.execute(select(BotAnalysis).where(BotAnalysis.symbol == sym.symbol))
+                    for o in old.scalars().all():
+                        await db.delete(o)
+
+                    analysis = BotAnalysis(
+                        symbol=sym.symbol,
+                        decision=decision,
+                        confidence_score=signal.get("confidence", 0),
+                        reasoning=" | ".join(reasoning_parts),
+                        technical_indicators=signal,
+                    )
+                    db.add(analysis)
+
+                    # Log prediction for learning
+                    if signal.get("should_trade"):
+                        await log_prediction(db, signal)
+
+                    await db.commit()
+                    logger.info(f"✅ {sym.symbol}: {decision} ({signal.get('confidence', 0)}%)")
+
+                except Exception as e:
+                    logger.error(f"❌ Analysis failed for {sym.symbol}: {e}\n{traceback.format_exc()}")
+
+        logger.info("✅ Deterministic analysis cycle complete")
+    except Exception as e:
+        logger.error(f"❌ CRITICAL analysis job error: {e}\n{traceback.format_exc()}")
 
 
 async def run_paper_bot_job():
