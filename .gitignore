@@ -48,6 +48,8 @@ Thumbs.db
 *.sql.bak
 *.dump
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 
