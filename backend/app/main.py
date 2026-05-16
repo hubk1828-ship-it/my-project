@@ -108,8 +108,11 @@ async def run_analysis_job():
 
                 # Map to BotAnalysis format for DB compatibility
                 decision = "no_opportunity"
-                if signal.get("should_trade") or signal.get("near_miss"):
-                    decision = "buy" if signal["signal_type"] == "LONG" else "sell"
+                sig_type = signal.get("signal_type", "NONE")
+                if signal.get("should_trade"):
+                    decision = "buy" if sig_type == "LONG" else "sell"
+                elif signal.get("near_miss"):
+                    decision = "buy" if sig_type == "LONG" else "sell"
 
                 reasoning_parts = [
                     f"📐 تحليل حتمي | الثقة: {signal.get('confidence', 0)}%",
