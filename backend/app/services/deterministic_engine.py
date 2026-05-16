@@ -455,7 +455,7 @@ def compute_final_signal(
     final_raw = composite * lyap_p * evt_p * vol_p * btc_crash * ses_mul * fund_p
     confidence = max(1, min(99, round(final_raw * 100 + conf_bias)))
 
-    # Signal type
+    # Signal type — always resolve to a direction
     ts = scores.get("trend", 0.5)
     ms = scores.get("momentum", 0.5)
     rs = scores.get("rsi", 0.5)
@@ -465,8 +465,12 @@ def compute_final_signal(
         signal_type = "LONG"
     elif ts < 0.4 and ms < 0.45 and rs < 0.5:
         signal_type = "SHORT"
-    elif confidence >= NEAR_MISS_LOW and trend_dir != "NEUTRAL":
+    elif trend_dir != "NEUTRAL":
         signal_type = trend_dir
+    elif composite > 0.5:
+        signal_type = "LONG"
+    else:
+        signal_type = "SHORT"
 
     should_trade = confidence >= THRESHOLD and signal_type != "NEUTRAL"
     near_miss = NEAR_MISS_LOW <= confidence < THRESHOLD and signal_type != "NEUTRAL"
