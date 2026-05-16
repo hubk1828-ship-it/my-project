@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+PHI = 1.6180339887
 PHI_INV = 0.6180339887
 THRESHOLD = 74
 NEAR_MISS_LOW = 62
