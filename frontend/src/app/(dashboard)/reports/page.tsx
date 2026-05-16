@@ -425,7 +425,7 @@ export default function ReportsPage() {
               {/* Price */}
               <div style={{ padding: "12px 24px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontSize: 18, fontWeight: 800 }}>
-                  ${indicators.current_price ? indicators.current_price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: indicators.current_price < 1 ? 6 : 2 }) : "—"}
+                  ${(indicators.price || indicators.current_price) ? (indicators.price || indicators.current_price).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: (indicators.price || indicators.current_price) < 1 ? 6 : 2 }) : "—"}
                 </div>
               </div>
 
@@ -433,11 +433,11 @@ export default function ReportsPage() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 0, borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
                 {[
                   { label: "RSI", value: indicators.rsi?.toFixed(1), color: (indicators.rsi || 0) > 70 ? "#dc2626" : (indicators.rsi || 0) < 30 ? "#059669" : undefined },
-                  { label: "الاتجاه", value: indicators.trend === "bullish" ? "صاعد" : indicators.trend === "bearish" ? "هابط" : indicators.trend || "—" },
-                  { label: "حجم", value: indicators.volume_ratio ? `${indicators.volume_ratio}x` : "—" },
-                  { label: "FR", value: indicators.funding_rate != null ? `${(indicators.funding_rate * 100).toFixed(3)}%` : "—" },
-                  { label: "الدعم", value: indicators.support ? `$${indicators.support.toLocaleString()}` : "—", color: "#059669" },
-                  { label: "المقاومة", value: indicators.resistance ? `$${indicators.resistance.toLocaleString()}` : "—", color: "#dc2626" },
+                  { label: "الاتجاه", value: indicators.trend_direction || (indicators.trend === "bullish" ? "صاعد" : indicators.trend === "bearish" ? "هابط" : "—") },
+                  { label: "النظام", value: indicators.market_regime || "—" },
+                  { label: "VWAP", value: indicators.vwap_position || "—" },
+                  { label: "R:R", value: indicators.rr_ratio ? `${indicators.rr_ratio}:1` : "—", color: "#059669" },
+                  { label: "Hurst", value: indicators.hurst?.toFixed(2) || "—" },
                 ].map((item, i) => (
                   <div key={i} style={{ padding: "10px 14px", borderRight: i < 5 ? "1px solid var(--border)" : "none", textAlign: "center" }}>
                     <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 2 }}>{item.label}</div>
@@ -464,14 +464,14 @@ export default function ReportsPage() {
 
               {/* Reasoning + Confidence */}
               <div style={{ padding: "16px 24px" }}>
-                {/* Gemini Failure Alert */}
-                {(indicators.gemini_status === "failed" || indicators.ai_status === "failed") && (
+                {/* Near Miss Alert */}
+                {indicators.near_miss && (
                   <div style={{
                     padding: "10px 14px", marginBottom: 12, borderRadius: 8,
-                    background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
-                    fontSize: 13, color: "#dc2626", fontWeight: 600,
+                    background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.2)",
+                    fontSize: 13, color: "#d97706", fontWeight: 600,
                   }}>
-                    🚨 AI متعطل — لم يتم التحليل
+                    ⚠️ قريب من العتبة — مراقبة
                   </div>
                 )}
 
@@ -480,26 +480,16 @@ export default function ReportsPage() {
                 ))}
 
                 {/* Confluence Score Breakdown */}
-                {(indicators.macro_score !== undefined || indicators.liquidity_score !== undefined || indicators.technical_score !== undefined) && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12, marginBottom: 10 }}>
-                    <div style={{ padding: "8px 10px", background: "var(--bg-primary)", borderRadius: 8, textAlign: "center" }}>
-                      <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 2 }}>ماكرو</div>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: (indicators.macro_score || 0) >= 20 ? "#059669" : "#d97706" }}>
-                        {indicators.macro_score || 0}<span style={{ fontSize: 10, color: "var(--text-muted)" }}>/30</span>
+                {indicators.scores && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 12, marginBottom: 10 }}>
+                    {Object.entries(indicators.scores as Record<string, number>).slice(0, 8).map(([key, val]: [string, number]) => (
+                      <div key={key} style={{ padding: "6px 8px", background: "var(--bg-primary)", borderRadius: 6, textAlign: "center" }}>
+                        <div style={{ fontSize: 9, color: "var(--text-muted)", marginBottom: 1 }}>{key}</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: val > 0.65 ? "#059669" : val < 0.35 ? "#dc2626" : "#d97706" }}>
+                          {(val * 100).toFixed(0)}%
+                        </div>
                       </div>
-                    </div>
-                    <div style={{ padding: "8px 10px", background: "var(--bg-primary)", borderRadius: 8, textAlign: "center" }}>
-                      <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 2 }}>سيولة</div>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: (indicators.liquidity_score || 0) >= 17 ? "#059669" : "#d97706" }}>
-                        {indicators.liquidity_score || 0}<span style={{ fontSize: 10, color: "var(--text-muted)" }}>/25</span>
-                      </div>
-                    </div>
-                    <div style={{ padding: "8px 10px", background: "var(--bg-primary)", borderRadius: 8, textAlign: "center" }}>
-                      <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 2 }}>فني</div>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: (indicators.technical_score || 0) >= 30 ? "#059669" : "#d97706" }}>
-                        {indicators.technical_score || 0}<span style={{ fontSize: 10, color: "var(--text-muted)" }}>/45</span>
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 )}
 

@@ -92,3 +92,14 @@ async def approve_auto_trade(
     settings.is_admin_approved = not settings.is_admin_approved
     await db.flush()
     return {"is_admin_approved": settings.is_admin_approved}
+
+
+@router.post("/run-analysis-sync")
+async def run_analysis_sync(
+    admin: User = Depends(require_admin),
+):
+    """Run deterministic analysis NOW (admin only). Called by 'Refresh Now' button."""
+    from app.main import run_analysis_job
+    await run_analysis_job()
+    return {"status": "ok", "message": "Deterministic analysis complete"}
+
