@@ -35,6 +35,12 @@ SUGGESTED_SOURCES = [
     {"name": "BeInCrypto", "url": "https://beincrypto.com"},
     {"name": "Blockworks", "url": "https://blockworks.co"},
     {"name": "DL News", "url": "https://dlnews.com"},
+    {"name": "CoinGecko News", "url": "https://coingecko.com/en/news"},
+    {"name": "Messari", "url": "https://messari.io"},
+    {"name": "CryptoNews", "url": "https://cryptonews.com"},
+    {"name": "NewsBTC", "url": "https://newsbtc.com"},
+    {"name": "Bitcoinist", "url": "https://bitcoinist.com"},
+    {"name": "U.Today", "url": "https://u.today"},
 ]
 
 
