@@ -113,13 +113,14 @@ async def run_analysis_job():
                         spot_price=liq_data["spot_price"],
                     )
 
-                    # Map to BotAnalysis format for DB compatibility
-                    decision = "no_opportunity"
-                    sig_type = signal.get("signal_type", "NONE")
-                    if signal.get("should_trade"):
-                        decision = "buy" if sig_type == "LONG" else "sell"
-                    elif signal.get("near_miss"):
-                        decision = "buy" if sig_type == "LONG" else "sell"
+                    # Map to BotAnalysis — decision based on direction, bot uses user settings to trade
+                    sig_type = signal.get("signal_type", "NEUTRAL")
+                    if sig_type == "LONG":
+                        decision = "buy"
+                    elif sig_type == "SHORT":
+                        decision = "sell"
+                    else:
+                        decision = "no_opportunity"
 
                     reasoning_parts = [
                         f"📐 تحليل حتمي | الثقة: {signal.get('confidence', 0)}%",

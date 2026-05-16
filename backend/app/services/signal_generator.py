@@ -114,9 +114,7 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
             confidence = float(analysis.confidence_score or 0)
             signal_type = "long" if analysis.decision == "buy" else "short"
 
-            # Lower threshold = more trades = more small consistent profits
-            if confidence < 60:
-                continue
+            # No hardcoded threshold here — paper bot uses user's min_confidence setting
 
             # Check for existing active signal for same symbol
             existing = await db.execute(
