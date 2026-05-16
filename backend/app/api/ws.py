@@ -98,17 +98,17 @@ async def build_live_data() -> dict:
         coins = []
         for sym in symbols:
             price = prices.get(sym.symbol, 0)
-            ticker = tickers_24h.get(sym.symbol, {})
             analysis = analyses.get(sym.symbol)
+            ti = analysis.get("technical_indicators", {}) if analysis else {}
 
             coins.append({
                 "symbol": sym.symbol,
                 "base_asset": sym.base_asset,
-                "price": price,
-                "change_24h": ticker.get("change_pct", 0),
-                "volume_24h": ticker.get("volume", 0),
-                "high_24h": ticker.get("high", 0),
-                "low_24h": ticker.get("low", 0),
+                "price": price or ti.get("price", 0),
+                "change_24h": ti.get("change_24h", 0),
+                "volume_24h": ti.get("volume_24h", 0),
+                "high_24h": ti.get("high_24h", 0),
+                "low_24h": ti.get("low_24h", 0),
                 "analysis": analysis,
             })
 

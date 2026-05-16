@@ -406,6 +406,11 @@ def compute_scores(
         "ema_200": round(em200, 2),
         "high_50": round(hi, 2),
         "low_50": round(lo, 2),
+        # 24h stats (96 candles on 15m = 24h)
+        "high_24h": round(max(H[-96:]), 2) if len(H) >= 96 else round(max(H), 2),
+        "low_24h": round(min(L[-96:]), 2) if len(L) >= 96 else round(min(L), 2),
+        "volume_24h": round(sum(V[-96:]), 2) if len(V) >= 96 else round(sum(V), 2),
+        "change_24h": round(((P - C[-96]) / C[-96] * 100) if len(C) >= 96 and C[-96] > 0 else 0, 2),
     }
 
 
