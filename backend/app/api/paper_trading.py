@@ -57,8 +57,8 @@ async def reset_paper_wallet(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Reset paper wallet — delete everything and start fresh."""
-    from sqlalchemy import delete
+    """Reset paper wallet — clear holdings but KEEP trade history."""
+    from sqlalchemy import delete, update
 
     # Get all user wallets
     result = await db.execute(
@@ -66,13 +66,14 @@ async def reset_paper_wallet(
     )
     wallets = result.scalars().all()
 
-    # Delete trades and holdings for all wallets
+    # Archive trades: mark old trades with the old wallet ID (keep them)
+    # Only delete holdings (open positions)
     for w in wallets:
-        await db.execute(delete(PaperTrade).where(PaperTrade.wallet_id == w.id))
         await db.execute(delete(PaperHolding).where(PaperHolding.wallet_id == w.id))
 
-    # Delete all wallets
-    await db.execute(delete(PaperWallet).where(PaperWallet.user_id == user.id))
+    # Deactivate old wallets instead of deleting
+    for w in wallets:
+        w.is_active = False
 
     # Create fresh wallet
     wallet = PaperWallet(
@@ -85,6 +86,7 @@ async def reset_paper_wallet(
     await db.commit()
     await db.refresh(wallet)
     return wallet
+
 
 @router.get("/wallet", response_model=PaperWalletDetail)
 async def get_paper_wallet(
@@ -119,10 +121,14 @@ async def get_paper_wallet(
     total_pnl = total_value - float(wallet.initial_balance)
     total_pnl_pct = (total_pnl / float(wallet.initial_balance)) * 100 if float(wallet.initial_balance) > 0 else 0
 
-    # Win rate
+    # Win rate — include ALL user trades (current + archived wallets)
+    all_wallet_ids = [w.id for w in (await db.execute(
+        select(PaperWallet).where(PaperWallet.user_id == user.id)
+    )).scalars().all()]
+
     trades_result = await db.execute(
         select(PaperTrade).where(
-            PaperTrade.wallet_id == wallet.id,
+            PaperTrade.wallet_id.in_(all_wallet_ids),
             PaperTrade.side == "sell",
         )
     )
@@ -130,9 +136,9 @@ async def get_paper_wallet(
     wins = sum(1 for t in sell_trades if float(t.pnl or 0) > 0)
     win_rate = (wins / len(sell_trades) * 100) if sell_trades else 0
 
-    # Total trades count
+    # Total trades count (all wallets)
     count_result = await db.execute(
-        select(func.count(PaperTrade.id)).where(PaperTrade.wallet_id == wallet.id)
+        select(func.count(PaperTrade.id)).where(PaperTrade.wallet_id.in_(all_wallet_ids))
     )
     total_trades = count_result.scalar() or 0
 
@@ -151,7 +157,7 @@ async def delete_paper_wallet(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete paper wallet and reset."""
+    """Delete paper wallet (deactivate)."""
     result = await db.execute(
         select(PaperWallet).where(PaperWallet.user_id == user.id, PaperWallet.is_active == True)
     )
@@ -159,36 +165,9 @@ async def delete_paper_wallet(
     if not wallet:
         raise HTTPException(404, "لا توجد محفظة وهمية")
 
-    await db.delete(wallet)
+    wallet.is_active = False
     await db.commit()
     return {"message": "تم حذف المحفظة الوهمية"}
-
-
-@router.post("/wallet/reset", response_model=PaperWalletResponse)
-async def reset_paper_wallet(
-    data: PaperWalletCreate,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Reset paper wallet with new balance."""
-    result = await db.execute(
-        select(PaperWallet).where(PaperWallet.user_id == user.id, PaperWallet.is_active == True)
-    )
-    wallet = result.scalar_one_or_none()
-    if wallet:
-        await db.delete(wallet)
-        await db.flush()
-
-    new_wallet = PaperWallet(
-        user_id=user.id,
-        initial_balance=data.initial_balance,
-        current_balance=data.initial_balance,
-        label=data.label,
-    )
-    db.add(new_wallet)
-    await db.commit()
-    await db.refresh(new_wallet)
-    return new_wallet
 
 
 # ===== Paper Trades =====
