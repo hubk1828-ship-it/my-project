@@ -133,23 +133,29 @@ async def generate_signals(db: AsyncSession) -> List[Dict]:
             atr_val = indicators.get("atr", current_price * 0.015)
 
             if engine_tp and engine_sl:
-                # Conservative TP1 = closer target for higher win rate
-                # TP1 = ATR × 0.8 (easy to hit), TP2 = engine TP, TP3 = extended
+                # Minimum percentage targets to avoid too-tight entries
+                min_tp1_pct = 0.005   # 0.5% minimum for TP1
+                min_tp2_pct = 0.010   # 1.0% minimum for TP2
+                min_tp3_pct = 0.020   # 2.0% minimum for TP3
+                min_sl_pct  = 0.004   # 0.4% minimum for SL
+
                 if signal_type == "long":
-                    tp1 = engine_entry + abs(atr_val) * 0.8
-                    tp2 = float(engine_tp)
-                    tp3 = engine_entry + abs(atr_val) * 3.0
+                    tp1 = max(engine_entry + abs(atr_val) * 0.8, engine_entry * (1 + min_tp1_pct))
+                    tp2 = max(float(engine_tp), engine_entry * (1 + min_tp2_pct))
+                    tp3 = max(engine_entry + abs(atr_val) * 3.0, engine_entry * (1 + min_tp3_pct))
+                    sl_price = min(float(engine_sl), engine_entry * (1 - min_sl_pct))
                 else:
-                    tp1 = engine_entry - abs(atr_val) * 0.8
-                    tp2 = float(engine_tp)
-                    tp3 = engine_entry - abs(atr_val) * 3.0
+                    tp1 = min(engine_entry - abs(atr_val) * 0.8, engine_entry * (1 - min_tp1_pct))
+                    tp2 = min(float(engine_tp), engine_entry * (1 - min_tp2_pct))
+                    tp3 = min(engine_entry - abs(atr_val) * 3.0, engine_entry * (1 - min_tp3_pct))
+                    sl_price = max(float(engine_sl), engine_entry * (1 + min_sl_pct))
 
                 targets = {
                     "entry_price": float(engine_entry),
                     "target_1": round(tp1, 8),
                     "target_2": round(tp2, 8),
                     "target_3": round(tp3, 8),
-                    "stop_loss": float(engine_sl),
+                    "stop_loss": round(sl_price, 8),
                 }
             else:
                 support = indicators.get("low_50", current_price * 0.97)
